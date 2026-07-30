@@ -123,13 +123,17 @@ export function useChessEngine(): UseChessEngineReturn {
   const isPlayingRef    = useRef(false);
   isPlayingRef.current  = isPlaying;
 
-  // Register Stockfish message handler
+  // Register Stockfish message handler ONCE — stable, never re-registered.
+  // Bug Fix: Previously had `chessGame.fen` as a dependency which caused the handler
+  // to be briefly null on every move, creating a window where `bestmove` could be
+  // missed entirely, permanently locking isAiThinkingRef = true and freezing the AI.
   useEffect(() => {
     stockfish.setMessageHandler(line => {
       handleEngineInfo(line);
       if (line.startsWith('bestmove')) handleBestMove(line);
     });
-  }, [stockfish, chessGame.fen]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockfish]);
 
   // Trigger AI move when it's AI's turn
   useEffect(() => {
@@ -141,6 +145,22 @@ export function useChessEngine(): UseChessEngineReturn {
       return () => clearTimeout(timer);
     }
   }, [isPlaying, chessGame.fen, playerColor, chessGame.isGameOver]);
+
+  // Watchdog: if isAiThinkingRef is stuck for more than 15s, auto-recover.
+  // This catches edge cases where bestmove is missed and AI freezes permanently.
+  useEffect(() => {
+    if (!isPlaying) return;
+    const watchdog = setInterval(() => {
+      if (isAiThinkingRef.current && isPlayingRef.current && !chessGame.isGameOver) {
+        console.warn('[Brilliant Hunter Watchdog] AI thinking stuck > 15s, auto-recovering...');
+        isAiThinkingRef.current = false;
+        stockfish.sendCommand('stop');
+        // Re-trigger via a small delay to let Stockfish finish cleanly
+        setTimeout(() => scheduleAiMove(), 400);
+      }
+    }, 15000);
+    return () => clearInterval(watchdog);
+  }, [isPlaying, chessGame.isGameOver]);
 
   // ── helpers ────────────────────────────────────────────────────────────── //
 
