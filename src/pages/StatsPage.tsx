@@ -512,8 +512,8 @@ function AnalysisPanel({ stats }: { stats: ReturnType<typeof usePlayerStats> }) 
       icon: '♜',
       color: '#a78bfa',
       insight: (() => {
-        const es = analysis.endgameStats;
-        if (es.gameCount === 0) return 'None of your recent games reached move 36 — most end in the opening or middlegame.';
+        const es = analysis?.endgameStats;
+        if (!es || es.gameCount === 0) return 'None of your recent games reached move 36 — most end in the opening or middlegame.';
         const winPct   = (es.winRate * 100).toFixed(0);
         const ovPct    = (es.overallWinRate * 100).toFixed(0);
         const reachPct = (es.reachRate * 100).toFixed(0);
@@ -842,9 +842,9 @@ function AnalysisPanel({ stats }: { stats: ReturnType<typeof usePlayerStats> }) 
                           // ── Endgame ───────────────────────────────────────── //
                           if (key === 'endgame') {
                             const tips: { icon: string; text: string; color: string }[] = [];
-                            const es = analysis.endgameStats;
+                            const es = analysis?.endgameStats;
 
-                            if (es.gameCount === 0) {
+                            if (!es || es.gameCount === 0) {
                               tips.push({ icon: '♜', color: '#64748b', text: 'Play more long games to get endgame insights. Try slower time controls.' });
                               return tips;
                             }
