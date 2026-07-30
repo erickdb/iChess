@@ -42,7 +42,7 @@ export function StatsPage() {
         <input
           value={inputVal}
           onChange={e => setInputVal(e.target.value)}
-          placeholder="Masukkan username Chess.com..."
+          placeholder="Enter Chess.com username..."
           className="flex-1 bg-[#0d1120] border border-[#232c45] rounded-xl px-4 py-3 text-white text-[14px] outline-none placeholder:text-[#475569] focus:border-[#00adb5] focus:shadow-[0_0_0_3px_rgba(0,173,181,0.15)] transition-all"
         />
         <button
@@ -50,7 +50,7 @@ export function StatsPage() {
           disabled={stats.fetchState === 'loading'}
           className="bg-gradient-to-br from-[#00adb5] to-[#007b82] border-0 rounded-xl px-6 py-3 text-white font-bold text-[14px] cursor-pointer transition-all hover:shadow-[0_4px_16px_rgba(0,173,181,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {stats.fetchState === 'loading' ? 'Loading…' : 'Cari →'}
+          {stats.fetchState === 'loading' ? 'Loading…' : 'Search →'}
         </button>
       </form>
 
@@ -58,7 +58,7 @@ export function StatsPage() {
       {stats.fetchState === 'loading' && (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <div className="w-12 h-12 border-4 border-[#232c45] border-t-[#00adb5] rounded-full animate-spin" />
-          <p className="text-[#64748b] text-sm">Memuat data pemain...</p>
+          <p className="text-[#64748b] text-sm">Loading player data...</p>
         </div>
       )}
 
@@ -190,9 +190,9 @@ function StatsPanel({ stats, myUsername }: { stats: ReturnType<typeof usePlayerS
 
               <div className="flex flex-col gap-2 flex-1">
                 {[
-                  { label: 'Menang', count: win,  color: '#22c55e' },
-                  { label: 'Seri',   count: draw, color: '#64748b' },
-                  { label: 'Kalah',  count: loss, color: '#ef4444' },
+                  { label: 'Won',  count: win,  color: '#22c55e' },
+                  { label: 'Drawn', count: draw, color: '#64748b' },
+                  { label: 'Lost',  count: loss, color: '#ef4444' },
                 ].map(({ label, count, color }) => (
                   <div key={label} className="flex items-center gap-3">
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
@@ -216,17 +216,17 @@ function StatsPanel({ stats, myUsername }: { stats: ReturnType<typeof usePlayerS
       {historyGames.length > 0 && (
         <div className="glass-card p-6">
           <h3 className="text-sm font-bold text-white mb-4">
-            🕓 Riwayat Game Terakhir
-            <span className="ml-2 text-[#64748b] font-normal text-xs">({historyGames.length} game)</span>
+            🕓 Recent Game History
+            <span className="ml-2 text-[#64748b] font-normal text-xs">({historyGames.length} games)</span>
           </h3>
           <div className="flex flex-col gap-0 overflow-hidden rounded-xl border border-[#232c45]">
             {/* Header */}
             <div className="grid grid-cols-[28px_1fr_80px_60px_60px_36px] gap-2 px-3 py-2 bg-[#0d1120] text-[10px] font-bold text-[#475569] uppercase tracking-wide">
               <div></div>
-              <div>Lawan</div>
+              <div>Opponent</div>
               <div>Opening</div>
-              <div className="text-center">Langkah</div>
-              <div className="text-center">Akurasi</div>
+              <div className="text-center">Moves</div>
+              <div className="text-center">Accuracy</div>
               <div></div>
             </div>
 

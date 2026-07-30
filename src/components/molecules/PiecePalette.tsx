@@ -14,21 +14,21 @@ interface PiecePaletteProps {
 }
 
 const WHITE_PIECES = [
-  { type: 'k', symbol: '♔', label: 'Raja Putih' },
-  { type: 'q', symbol: '♕', label: 'Menteri Putih' },
-  { type: 'r', symbol: '♖', label: 'Benteng Putih' },
-  { type: 'b', symbol: '♗', label: 'Gajah Putih' },
-  { type: 'n', symbol: '♘', label: 'Kuda Putih' },
-  { type: 'p', symbol: '♙', label: 'Pion Putih' },
+  { type: 'k', symbol: '♔', label: 'White King' },
+  { type: 'q', symbol: '♕', label: 'White Queen' },
+  { type: 'r', symbol: '♖', label: 'White Rook' },
+  { type: 'b', symbol: '♗', label: 'White Bishop' },
+  { type: 'n', symbol: '♘', label: 'White Knight' },
+  { type: 'p', symbol: '♙', label: 'White Pawn' },
 ] as const;
 
 const BLACK_PIECES = [
-  { type: 'k', symbol: '♚', label: 'Raja Hitam' },
-  { type: 'q', symbol: '♛', label: 'Menteri Hitam' },
-  { type: 'r', symbol: '♜', label: 'Benteng Hitam' },
-  { type: 'b', symbol: '♝', label: 'Gajah Hitam' },
-  { type: 'n', symbol: '♞', label: 'Kuda Hitam' },
-  { type: 'p', symbol: '♟', label: 'Pion Hitam' },
+  { type: 'k', symbol: '♚', label: 'Black King' },
+  { type: 'q', symbol: '♛', label: 'Black Queen' },
+  { type: 'r', symbol: '♜', label: 'Black Rook' },
+  { type: 'b', symbol: '♝', label: 'Black Bishop' },
+  { type: 'n', symbol: '♞', label: 'Black Knight' },
+  { type: 'p', symbol: '♟', label: 'Black Pawn' },
 ] as const;
 
 export function PiecePalette({
@@ -40,15 +40,15 @@ export function PiecePalette({
   return (
     <div className="glass-card p-4 flex flex-col gap-3">
       <div className="text-[12px] font-bold text-[#00adb5] uppercase tracking-wider">
-        🛠️ Palette Bidak &amp; Edit Board Setup
+        🛠️ Piece Palette &amp; Board Setup
       </div>
       <p className="text-[12px] text-[#94a3b8] m-0">
-        Pilih bidak di bawah, lalu klik petak papan untuk menambah / menghapus bidak secara bebas.
+        Select a piece below, then click any square on the board to add or remove pieces.
       </p>
 
       {/* White pieces */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] font-bold text-[#64748b] w-12">Putih:</span>
+        <span className="text-[11px] font-bold text-[#64748b] w-12">White:</span>
         {WHITE_PIECES.map(({ type, symbol, label }) => {
           const isSelected = selectedTool.color === 'w' && selectedTool.type === type;
           return (
@@ -73,7 +73,7 @@ export function PiecePalette({
 
       {/* Black pieces */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] font-bold text-[#64748b] w-12">Hitam:</span>
+        <span className="text-[11px] font-bold text-[#64748b] w-12">Black:</span>
         {BLACK_PIECES.map(({ type, symbol, label }) => {
           const isSelected = selectedTool.color === 'b' && selectedTool.type === type;
           return (
@@ -109,7 +109,7 @@ export function PiecePalette({
             }
           `}
         >
-          🗑️ Eraser (Hapus Petak)
+          🗑️ Eraser (Remove Piece)
         </button>
 
         <button
@@ -117,7 +117,7 @@ export function PiecePalette({
           onClick={onClearBoard}
           className="py-1.5 px-3 rounded-lg text-[12px] font-semibold bg-[#1a2033] border border-[#232c45] text-[#94a3b8] hover:text-white hover:border-[#ef4444] transition-all cursor-pointer"
         >
-          🧹 Kosongkan Papan
+          🧹 Clear Board
         </button>
 
         <button
@@ -125,7 +125,7 @@ export function PiecePalette({
           onClick={onResetBoard}
           className="py-1.5 px-3 rounded-lg text-[12px] font-semibold bg-[#1a2033] border border-[#232c45] text-[#94a3b8] hover:text-white hover:border-[#00adb5] transition-all cursor-pointer"
         >
-          🔄 Posisi Awal
+          🔄 Reset Position
         </button>
       </div>
     </div>

@@ -6,8 +6,8 @@ import { useNavToggle } from '@hooks/useNavToggle';
 
 const NAV_ITEMS = [
   { to: '/',         label: 'Home' },
-  { to: '/play',     label: 'Bermain Lawan AI' },
-  { to: '/analysis', label: 'Halaman Analisis' },
+  { to: '/play',     label: 'Play vs AI' },
+  { to: '/analysis', label: 'Analysis' },
   { to: '/stats',    label: 'Player Stats' },
 ] as const;
 

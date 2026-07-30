@@ -372,7 +372,7 @@ export function AnalysisPage() {
       {view === 'import' ? (
         /* ── Import View ─────────────────────────────────────────────── */
         <div className="max-w-[700px] mx-auto flex flex-col gap-6">
-          <h1 className="text-3xl font-black text-white text-center">Analisis PGN &amp; FEN</h1>
+          <h1 className="text-3xl font-black text-white text-center">PGN &amp; FEN Analysis</h1>
 
           <div className={cardCls}>
             <input
@@ -414,7 +414,7 @@ export function AnalysisPage() {
             <textarea
               value={inputText}
               onChange={e => setInputText(e.target.value)}
-              placeholder={importType === 'PGN' ? '1. e4 e5 2. Nf3 Nc6 3. Bb5... (atau upload file .pgn di atas)' : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 (atau upload file .fen di atas)'}
+              placeholder={importType === 'PGN' ? '1. e4 e5 2. Nf3 Nc6 3. Bb5... (or upload a .pgn file above)' : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 (or upload a .fen file above)'}
               className="w-full h-40 bg-[#0d1120] border border-[#232c45] rounded-lg p-3 text-[13px] text-white font-mono outline-none resize-none placeholder:text-[#475569] focus:border-[#00adb5] transition-colors"
             />
 
@@ -423,7 +423,7 @@ export function AnalysisPage() {
               disabled={isAnalyzing || !inputText.trim()}
               className="w-full mt-4 py-3 rounded-xl font-bold text-[14px] border-0 cursor-pointer transition-all bg-gradient-to-br from-[#00adb5] to-[#007b82] text-white hover:shadow-[0_4px_16px_rgba(0,173,181,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isAnalyzing ? `Menganalisis... ${progress}%` : 'Analisis Sekarang'}
+              {isAnalyzing ? `Analyzing... ${progress}%` : 'Analyze Now'}
             </button>
           </div>
         </div>
@@ -497,12 +497,12 @@ export function AnalysisPage() {
               <button onClick={() => stepTo(0)} title="First Move" className={navBtnCls}>⏮</button>
               <button onClick={() => stepTo(currentIdx - 1)} title="Previous Move" className={navBtnCls}>◀</button>
               <button onClick={toggleAutoPlay} title="Play/Pause" className={`${navBtnCls} flex-1 max-w-[100px] text-sm font-bold ${isAutoPlaying ? 'text-[#ef4444] border-[#ef4444]' : 'text-[#00adb5]'}`}>
-                {isAutoPlaying ? '⏸ Jeda' : '▶ Play'}
+                {isAutoPlaying ? '⏸ Pause' : '▶ Play'}
               </button>
               <button onClick={() => stepTo(currentIdx + 1)} title="Next Move" className={navBtnCls}>▶</button>
               <button onClick={() => stepTo(moves.length)} title="Last Move" className={navBtnCls}>⏭</button>
               <button onClick={() => { setView('import'); setMoves([]); setCurrentIdx(0); }} className="px-3 py-2 rounded-xl text-xs font-semibold bg-[#1a2033] border border-[#232c45] text-[#94a3b8] hover:text-white transition-all cursor-pointer">
-                Import Baru
+                New Import
               </button>
             </div>
           </div>

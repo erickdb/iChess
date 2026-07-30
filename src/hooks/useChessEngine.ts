@@ -78,11 +78,11 @@ export function useChessEngine(): UseChessEngineReturn {
   const [whiteDepth, setWhiteDepth]     = useState(8);
   const [blackDepth, setBlackDepth]     = useState(8);
   const [isPlaying, setIsPlaying]       = useState(false);
-  const [status, setStatus]             = useState('Klik Start AI untuk mulai!');
+  const [status, setStatus]             = useState('Click Start AI to begin!');
   const [boardOrientation, setBoardOrientation] = useState<'white' | 'black'>('white');
   const [notationType, setNotationType] = useState<NotationType>('PGN');
   const [continuationText, setContinuation] = useState('—');
-  const [aiGoalText, setAiGoal]         = useState('🎯 Tujuan: Menunggu pergerakan...');
+  const [aiGoalText, setAiGoal]         = useState('🎯 Goal: Waiting for move...');
 
   const [selectedTool, setSelectedTool] = useState<SelectedPieceTool>({ type: null, color: 'w' });
 
@@ -97,12 +97,12 @@ export function useChessEngine(): UseChessEngineReturn {
 
   const handleClearBoard = useCallback(() => {
     chessGame.clearBoard();
-    setStatus('Papan dikosongkan.');
+    setStatus('Board cleared.');
   }, [chessGame]);
 
   const handleResetBoard = useCallback(() => {
     chessGame.reset();
-    setStatus('Posisi catur awal di-reset.');
+    setStatus('Starting position reset.');
   }, [chessGame]);
 
   const mpvRef          = useRef<MpvEval[]>([]);
@@ -147,7 +147,7 @@ export function useChessEngine(): UseChessEngineReturn {
   function scheduleAiMove() {
     if (isAiThinkingRef.current || !isPlayingRef.current) return;
     isAiThinkingRef.current = true;
-    setStatus('🤖 AI sedang berpikir...');
+    setStatus('🤖 AI is thinking...');
 
     // Try opening book first
     const bookMove = openingBook.getBookMove(chessGame.game);
@@ -155,7 +155,7 @@ export function useChessEngine(): UseChessEngineReturn {
       isAiThinkingRef.current = false;
       const res = chessGame.makeUciMove(bookMove);
       if (res) {
-        setStatus(`AI (${res.color === 'w' ? 'Putih' : 'Hitam'}): ${res.san}`);
+        setStatus(`AI (${res.color === 'w' ? 'White' : 'Black'}): ${res.san}`);
       } else {
         // Fall back to engine if book move failed
         isAiThinkingRef.current = true;
@@ -212,7 +212,7 @@ export function useChessEngine(): UseChessEngineReturn {
 
     const result = chessGame.makeUciMove(chosen);
     if (result) {
-      setStatus(`AI (${result.color === 'w' ? 'Putih' : 'Hitam'}): ${result.san}`);
+      setStatus(`AI (${result.color === 'w' ? 'White' : 'Black'}): ${result.san}`);
     }
   }
 
@@ -226,7 +226,7 @@ export function useChessEngine(): UseChessEngineReturn {
 
       const result = chessGame.move(from, to, 'q');
       if (result) {
-        setStatus(`Kamu: ${result.san}`);
+        setStatus(`You: ${result.san}`);
         return true;
       }
       return false;
@@ -241,7 +241,7 @@ export function useChessEngine(): UseChessEngineReturn {
     if (pieceOnFrom) {
       chessGame.removeSquare(from);
       chessGame.putPiece(to, pieceOnFrom.type, pieceOnFrom.color);
-      setStatus(`Posisi diubah: ${from} ➔ ${to}`);
+      setStatus(`Position updated: ${from} ➔ ${to}`);
       return true;
     }
 
@@ -252,10 +252,10 @@ export function useChessEngine(): UseChessEngineReturn {
     if (isPlaying) {
       setIsPlaying(false);
       stockfish.sendCommand('stop');
-      setStatus('AI dijeda.');
+      setStatus('AI paused.');
     } else {
       setIsPlaying(true);
-      setStatus('AI berjalan...');
+      setStatus('AI running...');
     }
   }, [isPlaying, stockfish]);
 
@@ -276,9 +276,9 @@ export function useChessEngine(): UseChessEngineReturn {
     mpvRef.current = [];
     isAiThinkingRef.current = false;
     setIsPlaying(false);
-    setStatus('Klik Start AI untuk mulai!');
+    setStatus('Click Start AI to begin!');
     setContinuation('—');
-    setAiGoal('🎯 Tujuan: Menunggu pergerakan...');
+    setAiGoal('🎯 Goal: Waiting for move...');
   }, [chessGame, stockfish]);
 
   const handleFlip = useCallback(() => {
@@ -344,27 +344,27 @@ function buildGoalText(fen: string, uciArray: string[]): string {
   try {
     const tmp  = new Chess(fen);
     const uci  = uciArray[0];
-    if (!uci || uci.length < 4) return '🎯 Tujuan: Mengatur tempo posisi.';
+    if (!uci || uci.length < 4) return '🎯 Goal: Adjusting positional tempo.';
     const res  = tmp.move({ from: uci.substring(0,2), to: uci.substring(2,4), promotion: uci[4] ?? 'q' });
-    if (!res) return '🎯 Tujuan: Mengatur tempo posisi.';
+    if (!res) return '🎯 Goal: Adjusting positional tempo.';
     const side = sideLabel(res.color === 'w' ? 'w' : 'b');
 
-    if (tmp.isCheckmate())   return `🎯 Tujuan (${side}): ⚡ EKSEKUSI SKAKMAT!`;
-    if (tmp.inCheck())       return `🎯 Tujuan (${side}): 💥 Skak Raja lawan!`;
+    if (tmp.isCheckmate())   return `🎯 Goal (${side}): ⚡ EXECUTE CHECKMATE!`;
+    if (tmp.inCheck())       return `🎯 Goal (${side}): 💥 Check enemy King!`;
     if (res.captured) {
-      const n = PIECE_NAMES_ID[res.captured] ?? 'Bidak';
-      return `🎯 Tujuan (${side}): ⚔️ Memakan ${n} lawan.`;
+      const n = PIECE_NAMES_ID[res.captured] ?? 'Piece';
+      return `🎯 Goal (${side}): ⚔️ Capture enemy ${n}.`;
     }
     if (res.san === 'O-O' || res.san === 'O-O-O')
-      return `🎯 Tujuan (${side}): 🏰 Rokade untuk keamanan Raja.`;
+      return `🎯 Goal (${side}): 🏰 Castle for King safety.`;
     if (res.piece === 'p' && ['e4','d4','e5','d5'].includes(res.to))
-      return `🎯 Tujuan (${side}): ♟️ Kontrol petak pusat (${res.to}).`;
+      return `🎯 Goal (${side}): ♟️ Control central square (${res.to}).`;
     if (res.piece === 'n' || res.piece === 'b') {
-      const pn = res.piece === 'n' ? 'Kuda' : 'Gajah';
-      return `🎯 Tujuan (${side}): 🐴 Kembangkan ${pn} ke ${res.to}.`;
+      const pn = res.piece === 'n' ? 'Knight' : 'Bishop';
+      return `🎯 Goal (${side}): 🐴 Develop ${pn} to ${res.to}.`;
     }
-    return `🎯 Tujuan (${side}): ♟️ Perkuat posisi di ${res.to}.`;
-  } catch { return '🎯 Tujuan: Mengatur strategi posisi.'; }
+    return `🎯 Goal (${side}): ♟️ Solidify position on ${res.to}.`;
+  } catch { return '🎯 Goal: Structuring positional strategy.'; }
 }
 
 function selectMikhailTalMove(mpv: MpvEval[], defaultMove: string): string {

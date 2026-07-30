@@ -7,16 +7,16 @@ import { PiecePalette } from '@components/molecules/PiecePalette';
 import type { PlayerColor } from '@hooks/useChessGame';
 
 const DEPTH_OPTIONS = [
-  { value: 2,  label: 'Depth 2 — Pemula ~800 ELO' },
+  { value: 2,  label: 'Depth 2 — Beginner ~800 ELO' },
   { value: 4,  label: 'Depth 4 — ~1100 ELO' },
-  { value: 6,  label: 'Depth 6 — Menengah ~1350 ELO' },
-  { value: 8,  label: 'Depth 8 — Mahir ~1600 ELO' },
-  { value: 10, label: 'Depth 10 — Advanced ~1850 ELO' },
+  { value: 6,  label: 'Depth 6 — Intermediate ~1350 ELO' },
+  { value: 8,  label: 'Depth 8 — Advanced ~1600 ELO' },
+  { value: 10, label: 'Depth 10 — Candidate Master ~1850 ELO' },
   { value: 12, label: 'Depth 12 — Expert ~2100 ELO' },
   { value: 14, label: 'Depth 14 — Master ~2400 ELO' },
   { value: 16, label: 'Depth 16 — Grandmaster ~2700 ELO' },
   { value: 18, label: 'Depth 18 — Super GM ~3000 ELO' },
-  { value: 20, label: 'Depth 20 — Dewa Catur ~3200 ELO' },
+  { value: 20, label: 'Depth 20 — Engine God ~3200 ELO' },
   { value: 22, label: 'Depth 22 — Ultra Engine ~3400 ELO' },
   { value: 24, label: 'Depth 24 — Absolute Max ~3500 ELO' },
 ] as const;
@@ -49,7 +49,7 @@ export function PlayPage() {
         {/* Continuation card */}
         <div className="glass-card p-4">
           <div className="text-[11px] font-bold text-[#00adb5] uppercase tracking-wider mb-1">
-            💡 Prediksi &amp; Tujuan Rencana AI
+            💡 AI Prediction &amp; Plan Goal
           </div>
           <div className="text-[13px] text-[#94a3b8] mb-1">
             {engine.continuationText}
@@ -83,14 +83,14 @@ export function PlayPage() {
         {/* Mode */}
         <div className="glass-card p-5 flex flex-col gap-4">
           <div>
-            <label className={labelCls}>Mode / Warna Kamu</label>
+            <label className={labelCls}>Mode / Your Side</label>
             <select
               className={selectCls}
               value={engine.playerColor}
               onChange={e => engine.setPlayerColor(e.target.value as PlayerColor)}
             >
-              <option value="white">Putih (Melangkah Pertama)</option>
-              <option value="black">Hitam (AI Melangkah Pertama)</option>
+              <option value="white">White (Moves First)</option>
+              <option value="black">Black (AI Moves First)</option>
               <option value="aivsai">🤖 AI vs AI (Bot vs Bot)</option>
             </select>
           </div>
@@ -98,7 +98,7 @@ export function PlayPage() {
           {/* White depth */}
           {engine.playerColor !== 'black' && (
             <div>
-              <label className={labelCls}>Level AI Putih (Depth)</label>
+              <label className={labelCls}>White AI Level (Depth)</label>
               <select
                 className={selectCls}
                 value={engine.whiteDepth}
@@ -114,7 +114,7 @@ export function PlayPage() {
           {/* Black depth */}
           {engine.playerColor !== 'white' && (
             <div>
-              <label className={labelCls}>Level AI Hitam (Depth)</label>
+              <label className={labelCls}>Black AI Level (Depth)</label>
               <select
                 className={selectCls}
                 value={engine.blackDepth}
@@ -169,10 +169,10 @@ export function PlayPage() {
 
           <div className="flex gap-2">
             <button onClick={engine.handleFlip} className={`${btnBase} flex-1 bg-[#1a2033] border border-[#232c45] text-[#94a3b8] hover:text-white hover:border-[#334155]`}>
-              Putar Papan
+              Flip Board
             </button>
             <button onClick={engine.handleReset} className={`${btnBase} flex-1 bg-[#1a2033] border border-[#232c45] text-[#94a3b8] hover:text-white hover:border-[#334155]`}>
-              Restart
+              Reset
             </button>
           </div>
 
@@ -185,7 +185,7 @@ export function PlayPage() {
         {/* Notation card */}
         <div className="glass-card p-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <span className={labelCls + ' mb-0'}>Notasi Langkah</span>
+            <span className={labelCls + ' mb-0'}>Move Notation</span>
             <select
               className="bg-[#0d1120] border border-[#232c45] rounded-md px-2 py-1 text-[12px] text-white outline-none cursor-pointer"
               value={engine.notationType}
@@ -202,7 +202,7 @@ export function PlayPage() {
             onClick={handleCopy}
             className={`${btnBase} bg-[#1a2033] border border-[#232c45] text-[#94a3b8] hover:text-white hover:border-[#334155] text-[12px]`}
           >
-            {copied ? '✓ Tersalin!' : 'Copy Notasi'}
+            {copied ? '✓ Copied!' : 'Copy Notation'}
           </button>
         </div>
 

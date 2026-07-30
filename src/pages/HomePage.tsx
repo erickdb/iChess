@@ -6,24 +6,24 @@ import { useState } from 'react';
 const FEATURES = [
   {
     icon: '🎮',
-    title: 'AI Engine Cerdas',
-    desc: 'Bertanding melawan AI dari level Pemula (~800 ELO) hingga Dewa Catur (~3500 ELO) dengan prediksi rencana langkah AI secara live.',
+    title: 'Smart AI Engine',
+    desc: 'Play against Stockfish AI from Beginner (~800 ELO) up to Chess Master (~3500 ELO) with real-time move plan predictions.',
     link: '/play',
-    cta: 'Mulai Main →',
+    cta: 'Start Game →',
   },
   {
     icon: '🔍',
-    title: 'Analisis PGN & FEN',
-    desc: 'Evaluasi permainan dengan grafik keunggulan, deteksi blunder otomatis, dan pengenalan nama pembukaan ECO resmi.',
+    title: 'PGN & FEN Analysis',
+    desc: 'Evaluate games with win-rate charts, automated blunder detection, and official ECO opening identification.',
     link: '/analysis',
-    cta: 'Buka Analisis →',
+    cta: 'Open Analysis →',
   },
   {
     icon: '📊',
     title: 'Player Stats & Analytics',
-    desc: 'Laporan statistik 7 kategori performa (Opening, Tactics, Resourcefulness, Time, Endgame) langsung dari Chess.com Public API.',
+    desc: 'Comprehensive report on 7 performance categories (Opening, Tactics, Resourcefulness, Time, Endgame) directly from Chess.com Public API.',
     link: '/stats',
-    cta: 'Cek Stats Pemain →',
+    cta: 'Check Player Stats →',
   },
 ] as const;
 
@@ -54,19 +54,18 @@ export function HomePage() {
         </div>
 
         <h1 className="gradient-text text-[clamp(2.4rem,5.5vw,4.2rem)] font-black leading-[1.15] tracking-[-1px] mb-5">
-          Kuasai Permainan Catur dengan Kecerdasan AI
+          Master Chess with AI Intelligence
         </h1>
 
         <p className="text-[17px] text-[#94a3b8] leading-[1.65] max-w-[680px] mb-10">
-          Platform catur modern yang menggabungkan AI engine tangguh hingga kedalaman langkah Depth 24,
-          analisis taktis PGN/FEN mendalam, dan laporan statistik pemain riil dari Chess.com.
+          A modern chess platform featuring a powerful AI engine up to Depth 24, deep PGN/FEN tactical analysis, and real-time player analytics powered by Chess.com.
         </p>
 
         <div className="flex flex-wrap gap-4 justify-center">
           {[
-            { to: '/play',     icon: '🎮', label: 'Bermain Lawan AI' },
+            { to: '/play',     icon: '🎮', label: 'Play vs AI' },
             { to: '/stats',    icon: '📊', label: 'Player Stats Lookup' },
-            { to: '/analysis', icon: '🔍', label: 'Analisis PGN & FEN' },
+            { to: '/analysis', icon: '🔍', label: 'PGN & FEN Analysis' },
           ].map(({ to, icon, label }) => (
             <a
               key={to}
@@ -94,9 +93,9 @@ export function HomePage() {
         {/* ambient glow top-right */}
         <div className="absolute -top-12 -right-12 w-40 h-40 bg-[radial-gradient(circle,rgba(0,173,181,0.15),transparent_70%)] pointer-events-none" />
 
-        <h2 className="text-[20px] font-extrabold text-white mb-2">Cari &amp; Analisa Akun Chess.com</h2>
+        <h2 className="text-[20px] font-extrabold text-white mb-2">Search &amp; Analyze Chess.com Accounts</h2>
         <p className="text-[14px] text-[#64748b] mb-6">
-          Masukkan username untuk melihat statistik rating, win rate, dan 7 kategori analisis performa.
+          Enter any Chess.com username to inspect rating stats, win rates, and 7 performance categories.
         </p>
 
         <form onSubmit={handleLookup} className="flex flex-col sm:flex-row gap-3 w-full">
@@ -104,7 +103,7 @@ export function HomePage() {
             type="text"
             value={username}
             onChange={e => setUsername(e.target.value)}
-            placeholder="Contoh: hikaru, magnuscarlsen, irychee..."
+            placeholder="e.g. hikaru, magnuscarlsen"
             autoComplete="off"
             className="
               flex-1 bg-[#0d1120] border-[1.5px] border-[#232c45] rounded-xl
@@ -131,8 +130,8 @@ export function HomePage() {
       {/* ── Feature Pillars Grid ────────────────────────────────────── */}
       <section className="w-full">
         <div className="text-center mb-12">
-          <h2 className="text-[28px] font-extrabold text-white mb-3">Fitur Unggulan iChess</h2>
-          <p className="text-[15px] text-[#64748b]">Segala yang kamu butuhkan untuk melatih taktik, bertanding, dan menganalisis permainan</p>
+          <h2 className="text-[28px] font-extrabold text-white mb-3">Key Features of iChess</h2>
+          <p className="text-[15px] text-[#64748b]">Everything you need to practice tactics, play games, and analyze performance</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

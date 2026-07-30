@@ -121,9 +121,9 @@ export function useChessGame(): UseChessGameReturn {
   const g = gameRef.current;
   const isGameOver = g.isGameOver();
   const gameOverReason = isGameOver
-    ? g.isCheckmate()    ? (g.turn() === 'w' ? 'Hitam Menang! Skakmat!' : 'Putih Menang! Skakmat!')
-    : g.isStalemate()   ? 'Seri — Stalemate!'
-    : g.isDraw()        ? 'Seri — Posisi Draw!'
+    ? g.isCheckmate()   ? (g.turn() === 'w' ? 'Black Wins! Checkmate!' : 'White Wins! Checkmate!')
+    : g.isStalemate()   ? 'Draw — Stalemate!'
+    : g.isDraw()        ? 'Draw — Game Drawn!'
     : 'Game Over'
     : '';
 
