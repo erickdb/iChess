@@ -21,6 +21,7 @@ export interface UseChessGameReturn {
   reset: () => void;
   loadFen: (newFen: string) => boolean;
   putPiece: (square: string, type: 'p' | 'n' | 'b' | 'r' | 'q' | 'k', color: 'w' | 'b') => boolean;
+  movePieceCustom: (from: string, to: string) => boolean;
   removeSquare: (square: string) => boolean;
   clearBoard: () => void;
   canUndo: boolean;
@@ -94,9 +95,36 @@ export function useChessGame(): UseChessGameReturn {
 
   const putPiece = useCallback((square: string, type: 'p' | 'n' | 'b' | 'r' | 'q' | 'k', color: 'w' | 'b'): boolean => {
     try {
+      const existing = gameRef.current.get(square as Square);
+      if (existing && existing.type === type && existing.color === color) {
+        return true; // Already placed, avoid duplicate state updates
+      }
       gameRef.current.remove(square as Square);
       const ok = gameRef.current.put({ type, color }, square as Square);
+      if (!ok && existing) {
+        // Rollback if put failed
+        gameRef.current.put(existing, square as Square);
+      }
       if (ok) sync();
+      return ok;
+    } catch {
+      return false;
+    }
+  }, [sync]);
+
+  const movePieceCustom = useCallback((from: string, to: string): boolean => {
+    try {
+      const piece = gameRef.current.get(from as Square);
+      if (!piece) return false;
+      gameRef.current.remove(from as Square);
+      gameRef.current.remove(to as Square);
+      const ok = gameRef.current.put(piece, to as Square);
+      if (ok) {
+        sync();
+      } else {
+        // Rollback if put failed
+        gameRef.current.put(piece, from as Square);
+      }
       return ok;
     } catch {
       return false;
@@ -141,6 +169,7 @@ export function useChessGame(): UseChessGameReturn {
     reset,
     loadFen,
     putPiece,
+    movePieceCustom,
     removeSquare,
     clearBoard,
     canUndo: history.length > 0,

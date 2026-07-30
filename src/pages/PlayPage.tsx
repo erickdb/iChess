@@ -65,6 +65,7 @@ export function PlayPage() {
           orientation={engine.boardOrientation}
           onPieceDrop={engine.onPieceDrop}
           onSquareClick={engine.handleSquareClick}
+          squareBadge={engine.squareBadge}
           allowDragging={!engine.selectedTool.type}
         />
 
@@ -79,6 +80,47 @@ export function PlayPage() {
 
       {/* ── Controls Column ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 w-full max-w-[340px] mx-auto lg:mx-0">
+
+        {/* 🔥 Brilliant Hunter Mode Toggle Card */}
+        <div className={`glass-card p-4 transition-all duration-300 ${engine.isBrilliantHunter ? 'border-[#ff4b4b]/60 shadow-[0_0_20px_rgba(255,75,75,0.2)]' : ''}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🔥</span>
+              <div>
+                <div className="text-[13px] font-bold text-white flex items-center gap-1.5">
+                  Brilliant Hunter Mode
+                  {engine.isBrilliantHunter && (
+                    <span className="text-[10px] bg-[#ff4b4b]/20 text-[#ff4b4b] border border-[#ff4b4b]/40 px-1.5 py-0.5 rounded font-black tracking-wider uppercase">
+                      SUPER AGGRESSIVE !!
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-[#94a3b8]">
+                  AI actively hunts for piece sacrifices (!!)
+                </div>
+              </div>
+            </div>
+
+            {/* Toggle switch */}
+            <button
+              type="button"
+              onClick={() => engine.setBrilliantHunter(!engine.isBrilliantHunter)}
+              className={`
+                relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent 
+                transition-colors duration-200 ease-in-out focus:outline-none
+                ${engine.isBrilliantHunter ? 'bg-gradient-to-r from-[#ff4b4b] to-[#f97316]' : 'bg-[#1a2033]'}
+              `}
+            >
+              <span
+                className={`
+                  pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 
+                  transition duration-200 ease-in-out
+                  ${engine.isBrilliantHunter ? 'translate-x-5' : 'translate-x-0'}
+                `}
+              />
+            </button>
+          </div>
+        </div>
 
         {/* Mode */}
         <div className="glass-card p-5 flex flex-col gap-4">

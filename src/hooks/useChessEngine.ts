@@ -3,12 +3,13 @@
 // This is the single hook that PlayPage consumes.
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Chess } from 'chess.js';
+import { Chess, type Square } from 'chess.js';
 import { useChessGame, type PlayerColor } from './useChessGame';
 import { useStockfish } from './useStockfish';
 import { useOpeningBook } from './useOpeningBook';
 import { PIECE_NAMES_ID } from '@lib/constants';
 import { sideLabel } from '@lib/chessUtils';
+import type { SquareBadge } from '@components/organisms/ChessBoard';
 
 export type NotationType = 'PGN' | 'FEN';
 
@@ -43,6 +44,11 @@ export interface UseChessEngineReturn {
   isPlaying: boolean;
   togglePlay: () => void;
   status: string;
+
+  // Brilliant Hunter Mode
+  isBrilliantHunter: boolean;
+  setBrilliantHunter: (active: boolean) => void;
+  squareBadge: SquareBadge | null;
 
   // Board Setup / Palette
   selectedTool: SelectedPieceTool;
@@ -85,6 +91,11 @@ export function useChessEngine(): UseChessEngineReturn {
   const [aiGoalText, setAiGoal]         = useState('🎯 Goal: Waiting for move...');
 
   const [selectedTool, setSelectedTool] = useState<SelectedPieceTool>({ type: null, color: 'w' });
+  const [isBrilliantHunter, setBrilliantHunter] = useState(false);
+  const [squareBadge, setSquareBadge]   = useState<SquareBadge | null>(null);
+
+  const isBrilliantHunterRef = useRef(isBrilliantHunter);
+  isBrilliantHunterRef.current = isBrilliantHunter;
 
   const handleSquareClick = useCallback((square: string) => {
     if (!selectedTool.type) return;
@@ -97,11 +108,13 @@ export function useChessEngine(): UseChessEngineReturn {
 
   const handleClearBoard = useCallback(() => {
     chessGame.clearBoard();
+    setSquareBadge(null);
     setStatus('Board cleared.');
   }, [chessGame]);
 
   const handleResetBoard = useCallback(() => {
     chessGame.reset();
+    setSquareBadge(null);
     setStatus('Starting position reset.');
   }, [chessGame]);
 
@@ -147,25 +160,33 @@ export function useChessEngine(): UseChessEngineReturn {
   function scheduleAiMove() {
     if (isAiThinkingRef.current || !isPlayingRef.current) return;
     isAiThinkingRef.current = true;
-    setStatus('🤖 AI is thinking...');
+    setStatus(isBrilliantHunterRef.current ? '🔥 Brilliant Hunter AI is calculating sacrifices...' : '🤖 AI is thinking...');
 
-    // Try opening book first
-    const bookMove = openingBook.getBookMove(chessGame.game);
-    if (bookMove) {
-      isAiThinkingRef.current = false;
-      const res = chessGame.makeUciMove(bookMove);
-      if (res) {
-        setStatus(`AI (${res.color === 'w' ? 'White' : 'Black'}): ${res.san}`);
-      } else {
-        // Fall back to engine if book move failed
-        isAiThinkingRef.current = true;
-        stockfish.sendCommand('position fen ' + chessGame.game.fen());
-        stockfish.sendCommand(`go depth ${getDepth()}`);
+    // Bug Fix: Always clear stale MPV data before a new search so detectBrilliantSacrifice
+    // never picks a sacrifice from the previous board position.
+    mpvRef.current = [];
+
+    // Dynamic MultiPV configuration based on Brilliant Hunter Mode
+    stockfish.setMultiPV(isBrilliantHunterRef.current ? 5 : 2);
+
+    // Try opening book first if Brilliant Hunter isn't forcing custom sacrifice evaluation
+    if (!isBrilliantHunterRef.current) {
+      const bookMove = openingBook.getBookMove(chessGame.game);
+      if (bookMove) {
+        isAiThinkingRef.current = false;
+        const res = chessGame.makeUciMove(bookMove);
+        if (res) {
+          setStatus(`AI (${res.color === 'w' ? 'White' : 'Black'}): ${res.san}`);
+        } else {
+          isAiThinkingRef.current = true;
+          stockfish.sendCommand('position fen ' + chessGame.game.fen());
+          stockfish.sendCommand(`go depth ${getDepth()}`);
+        }
+        return;
       }
-      return;
     }
 
-    // Fall back to Stockfish
+    // Send position to Stockfish
     stockfish.sendCommand('position fen ' + chessGame.game.fen());
     stockfish.sendCommand(`go depth ${getDepth()}`);
   }
@@ -204,21 +225,46 @@ export function useChessEngine(): UseChessEngineReturn {
       return;
     }
 
-    // Najdorf Mikhail Tal speculative mode
     let chosen = best;
-    if (openingBook.isNajdorfActive(chessGame.game)) {
-      chosen = selectMikhailTalMove(mpvRef.current, best);
+    let isBrilliantExec = false;
+    let sacrificePieceName = '';
+    let sacrificeTargetSq = '';
+
+    // Brilliant Hunter Mode — scan MultiPV lines for safe & tactical piece sacrifices
+    if (isBrilliantHunterRef.current) {
+      const brilliant = detectBrilliantSacrifice(chessGame.game, mpvRef.current, best);
+      if (brilliant.isSacrifice) {
+        chosen = brilliant.move;
+        isBrilliantExec = true;
+        sacrificePieceName = brilliant.pieceName;
+        sacrificeTargetSq = brilliant.targetSquare;
+        setSquareBadge({ square: brilliant.targetSquare, symbol: '!!', color: '#00c853' });
+      } else {
+        setSquareBadge(null);
+      }
+    } else {
+      if (openingBook.isNajdorfActive(chessGame.game)) {
+        chosen = selectMikhailTalMove(mpvRef.current, best);
+      }
+      setSquareBadge(null);
     }
 
     const result = chessGame.makeUciMove(chosen);
     if (result) {
-      setStatus(`AI (${result.color === 'w' ? 'White' : 'Black'}): ${result.san}`);
+      if (isBrilliantExec) {
+        setStatus(`🔥 BRILLIANT SACRIFICE (!!): AI (${result.color === 'w' ? 'White' : 'Black'}) sacrificed ${sacrificePieceName} on ${sacrificeTargetSq}!`);
+      } else {
+        setStatus(`AI (${result.color === 'w' ? 'White' : 'Black'}): ${result.san}`);
+      }
     }
   }
 
   // ── Public handlers ────────────────────────────────────────────────────── //
 
   const onPieceDrop = useCallback((from: string, to: string, _piece?: string): boolean => {
+    // Clear previous brilliant badge when user plays
+    setSquareBadge(null);
+
     // 1. If AI is playing & it's user's turn, try legal chess move
     if (isPlayingRef.current) {
       if (chessGame.game.turn() === 'b' && playerColor === 'white') return false;
@@ -237,10 +283,8 @@ export function useChessEngine(): UseChessEngineReturn {
 
     // 3. Edit / Custom Position Mode — free piece movement
     if (from === to) return false; // no-op guard
-    const pieceOnFrom = chessGame.game.get(from as any);
-    if (pieceOnFrom) {
-      chessGame.removeSquare(from);
-      chessGame.putPiece(to, pieceOnFrom.type, pieceOnFrom.color);
+    const moved = chessGame.movePieceCustom(from, to);
+    if (moved) {
       setStatus(`Position updated: ${from} ➔ ${to}`);
       return true;
     }
@@ -261,17 +305,20 @@ export function useChessEngine(): UseChessEngineReturn {
 
   const handleUndo = useCallback(() => {
     stockfish.sendCommand('stop');
+    setSquareBadge(null);
     chessGame.undo();
     if (playerColor !== 'aivsai') chessGame.undo(); // undo AI move too
     isAiThinkingRef.current = false;
   }, [chessGame, stockfish, playerColor]);
 
   const handleRedo = useCallback(() => {
+    setSquareBadge(null);
     chessGame.redo();
   }, [chessGame]);
 
   const handleReset = useCallback(() => {
     stockfish.sendCommand('stop');
+    setSquareBadge(null);
     chessGame.reset();
     mpvRef.current = [];
     isAiThinkingRef.current = false;
@@ -304,6 +351,9 @@ export function useChessEngine(): UseChessEngineReturn {
     isPlaying,
     togglePlay,
     status,
+    isBrilliantHunter,
+    setBrilliantHunter,
+    squareBadge,
     selectedTool,
     setSelectedTool,
     handleSquareClick,
@@ -376,4 +426,117 @@ function selectMikhailTalMove(mpv: MpvEval[], defaultMove: string): string {
     return e.move;
   }
   return defaultMove;
+}
+
+interface BrilliantAnalysisResult {
+  move: string;
+  isSacrifice: boolean;
+  pieceName: string;
+  targetSquare: string;
+}
+
+function detectBrilliantSacrifice(
+  game: Chess,
+  mpvList: MpvEval[],
+  defaultBest: string,
+): BrilliantAnalysisResult {
+  if (!mpvList || mpvList.length === 0) {
+    return { move: defaultBest, isSacrifice: false, pieceName: '', targetSquare: '' };
+  }
+
+  const PIECE_VALUES: Record<string, number> = {
+    p: 1, n: 3, b: 3, r: 5, q: 9, k: 0
+  };
+
+  const isBlackTurn = game.turn() === 'b';
+
+  // Bug Fix: Stockfish cp is always from White's perspective.
+  // When it's Black's turn, a higher cp = worse for Black. Flip it so
+  // detectBrilliantSacrifice always reasons in "current player's advantage" space.
+  const normalizeCp = (cp: number) => isBlackTurn ? -cp : cp;
+
+  const validItems = mpvList.filter(Boolean);
+  if (validItems.length === 0) {
+    return { move: defaultBest, isSacrifice: false, pieceName: '', targetSquare: '' };
+  }
+
+  // Top line eval from the side to move's perspective
+  const topCpNorm = normalizeCp(validItems[0].cp);
+
+  // Only attempt Brilliant hunting when the position is reasonably good (not already losing badly)
+  // This prevents sacrificing when we're already down material.
+  if (topCpNorm < -50) {
+    return { move: defaultBest, isSacrifice: false, pieceName: '', targetSquare: '' };
+  }
+
+  for (const item of mpvList) {
+    if (!item || !item.move) continue;
+    const uci = item.move;
+    if (uci.length < 4) continue;
+
+    // Skip the top line itself — Brilliant Hunter looks for tactical non-#1 moves
+    if (uci === mpvList[0]?.move) continue;
+
+    const from = uci.substring(0, 2);
+    const to   = uci.substring(2, 4);
+
+    const piece = game.get(from as Square);
+    // Focus only on meaningful piece sacrifices: Knight, Bishop, Rook, Queen
+    if (!piece || piece.type === 'k' || piece.type === 'p') continue;
+
+    const attackerVal = PIECE_VALUES[piece.type] || 0;
+    const targetPiece = game.get(to as Square);
+    const targetVal   = targetPiece ? (PIECE_VALUES[targetPiece.type] || 0) : 0;
+
+    // Bug Fix: Tight safety check — the sacrifice line must:
+    // 1) Be within 150cp of the best line (not a blunder), AND
+    // 2) Leave the current side still positionally OK (cp > -30 from our perspective)
+    const cpNorm = normalizeCp(item.cp);
+    const cpDelta = topCpNorm - cpNorm;
+    const isEvalSafe = cpDelta <= 150 && cpNorm > -30;
+
+    if (!isEvalSafe) continue;
+
+    // Sacrifice Type A: Trading a clearly higher value piece for a lower value piece
+    // (e.g., Rook[5] for Knight[3] = delta 2, Queen[9] for Rook[5] = delta 4)
+    const isTradeSacrifice = targetPiece
+      && targetPiece.color !== piece.color // must be opponent's piece
+      && (attackerVal - targetVal >= 2);
+
+    // Sacrifice Type B: Moving piece to an EMPTY square that opponent can immediately
+    // recapture with a CHEAPER piece (true positional sacrifice, not an exchange)
+    let isAttackedSacrifice = false;
+    if (!targetPiece) {
+      try {
+        const clone = new Chess(game.fen());
+        const res = clone.move({ from, to, promotion: uci[4] ?? 'q' });
+        if (res) {
+          const oppMoves = clone.moves({ verbose: true });
+          for (const om of oppMoves) {
+            if (om.to === to) {
+              const oppPieceVal = PIECE_VALUES[om.piece] || 0;
+              // Bug Fix: Only flag as sacrifice if opponent recaptures with strictly
+              // CHEAPER piece (not equal). Equal = normal exchange, not a sacrifice.
+              if (oppPieceVal < attackerVal) {
+                isAttackedSacrifice = true;
+                break;
+              }
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (isTradeSacrifice || isAttackedSacrifice) {
+      const pieceName = PIECE_NAMES_ID[piece.type] || piece.type;
+      return {
+        move: uci,
+        isSacrifice: true,
+        pieceName,
+        targetSquare: to,
+      };
+    }
+  }
+
+  return { move: defaultBest, isSacrifice: false, pieceName: '', targetSquare: '' };
 }

@@ -8,6 +8,7 @@ export type StockfishMessageHandler = (line: string) => void;
 export interface UseStockfishReturn {
   sendCommand: (cmd: string) => void;
   setMessageHandler: (handler: StockfishMessageHandler) => void;
+  setMultiPV: (pvCount: number) => void;
   isReady: boolean;
 }
 
@@ -27,7 +28,7 @@ export function useStockfish(): UseStockfishReturn {
 
     worker.postMessage('uci');
     worker.postMessage('setoption name Hash value 32');
-    worker.postMessage('setoption name MultiPV value 2');
+    worker.postMessage('setoption name MultiPV value 1');
     worker.postMessage('isready');
 
     workerRef.current = worker;
@@ -46,5 +47,9 @@ export function useStockfish(): UseStockfishReturn {
     handlerRef.current = handler;
   }, []);
 
-  return { sendCommand, setMessageHandler, isReady: isReadyRef.current };
+  const setMultiPV = useCallback((pvCount: number) => {
+    workerRef.current?.postMessage(`setoption name MultiPV value ${pvCount}`);
+  }, []);
+
+  return { sendCommand, setMessageHandler, setMultiPV, isReady: isReadyRef.current };
 }
