@@ -460,101 +460,83 @@ function detectBrilliantSacrifice(
   mpvList: MpvEval[],
   defaultBest: string,
 ): BrilliantAnalysisResult {
-  if (!mpvList || mpvList.length === 0) {
-    return { move: defaultBest, isSacrifice: false, pieceName: '', targetSquare: '' };
-  }
-
   const PIECE_VALUES: Record<string, number> = {
-    p: 1, n: 3, b: 3, r: 5, q: 9, k: 0
+    p: 1, n: 3, b: 3, r: 5, q: 9, k: 0,
   };
 
-  const isBlackTurn = game.turn() === 'b';
-
-  // Bug Fix: Stockfish cp is always from White's perspective.
-  // When it's Black's turn, a higher cp = worse for Black. Flip it so
-  // detectBrilliantSacrifice always reasons in "current player's advantage" space.
-  const normalizeCp = (cp: number) => isBlackTurn ? -cp : cp;
-
-  const validItems = mpvList.filter(Boolean);
+  // Filter to valid entries only
+  const validItems = mpvList.filter(item => item && item.move && item.move.length >= 4);
   if (validItems.length === 0) {
     return { move: defaultBest, isSacrifice: false, pieceName: '', targetSquare: '' };
   }
 
-  // Top line eval from the side to move's perspective
-  const topCpNorm = normalizeCp(validItems[0].cp);
+  // IMPORTANT: In Stockfish UCI protocol, `score cp` is ALREADY from the side-to-move's
+  // perspective. cp=+200 always means the moving side has +2 pawn advantage.
+  // No flipping needed — previous normalizeCp was a double-flip BUG.
+  const topCp = validItems[0].cp;
 
-  // Only attempt Brilliant hunting when the position is reasonably good (not already losing badly)
-  // This prevents sacrificing when we're already down material.
-  if (topCpNorm < -50) {
+  // Refuse to hunt for sacrifices if the position is already objectively losing.
+  // If our best line is already worse than -1 pawn, don't throw more material away.
+  if (topCp < -100) {
     return { move: defaultBest, isSacrifice: false, pieceName: '', targetSquare: '' };
   }
 
-  for (const item of mpvList) {
-    if (!item || !item.move) continue;
+  // Scan ALL candidate lines (including #1) — a brilliant sacrifice is often line 1.
+  // We use a TIGHT window: the sacrifice line must be within 60cp of the best line,
+  // and must not leave us in a position worse than -80cp (not a blunder).
+  const MAX_CP_DELTA = 60;
+  const MIN_CP_AFTER = -80;
+
+  for (const item of validItems) {
+    const cpDelta = topCp - item.cp;
+    if (cpDelta > MAX_CP_DELTA) continue;   // Too inferior — skip
+    if (item.cp < MIN_CP_AFTER) continue;   // Results in losing position — skip
+
     const uci = item.move;
-    if (uci.length < 4) continue;
-
-    // Skip the top line itself — Brilliant Hunter looks for tactical non-#1 moves
-    if (uci === mpvList[0]?.move) continue;
-
     const from = uci.substring(0, 2);
     const to   = uci.substring(2, 4);
 
     const piece = game.get(from as Square);
-    // Focus only on meaningful piece sacrifices: Knight, Bishop, Rook, Queen
+    // Only flag Knight, Bishop, Rook, or Queen sacrifices (not King or pawn)
     if (!piece || piece.type === 'k' || piece.type === 'p') continue;
 
     const attackerVal = PIECE_VALUES[piece.type] || 0;
     const targetPiece = game.get(to as Square);
     const targetVal   = targetPiece ? (PIECE_VALUES[targetPiece.type] || 0) : 0;
 
-    // Bug Fix: Tight safety check — the sacrifice line must:
-    // 1) Be within 150cp of the best line (not a blunder), AND
-    // 2) Leave the current side still positionally OK (cp > -30 from our perspective)
-    const cpNorm = normalizeCp(item.cp);
-    const cpDelta = topCpNorm - cpNorm;
-    const isEvalSafe = cpDelta <= 150 && cpNorm > -30;
+    // Sacrifice Type A — Unequal trade: AI piece captures a clearly lower-value opponent piece
+    // Example: Rook(5) takes Knight(3) = delta 2. Queen(9) takes Rook(5) = delta 4.
+    if (targetPiece && targetPiece.color !== piece.color && (attackerVal - targetVal >= 2)) {
+      return {
+        move: uci,
+        isSacrifice: true,
+        pieceName: PIECE_NAMES_ID[piece.type] || piece.type,
+        targetSquare: to,
+      };
+    }
 
-    if (!isEvalSafe) continue;
-
-    // Sacrifice Type A: Trading a clearly higher value piece for a lower value piece
-    // (e.g., Rook[5] for Knight[3] = delta 2, Queen[9] for Rook[5] = delta 4)
-    const isTradeSacrifice = targetPiece
-      && targetPiece.color !== piece.color // must be opponent's piece
-      && (attackerVal - targetVal >= 2);
-
-    // Sacrifice Type B: Moving piece to an EMPTY square that opponent can immediately
-    // recapture with a CHEAPER piece (true positional sacrifice, not an exchange)
-    let isAttackedSacrifice = false;
+    // Sacrifice Type B — Positional: AI moves to an empty square that the opponent
+    // can immediately recapture with a STRICTLY CHEAPER piece (not equal exchange).
+    // Example: Knight(3) leaps to a square defended by only a Pawn(1) → sacrifice.
     if (!targetPiece) {
       try {
         const clone = new Chess(game.fen());
         const res = clone.move({ from, to, promotion: uci[4] ?? 'q' });
         if (res) {
           const oppMoves = clone.moves({ verbose: true });
-          for (const om of oppMoves) {
-            if (om.to === to) {
-              const oppPieceVal = PIECE_VALUES[om.piece] || 0;
-              // Bug Fix: Only flag as sacrifice if opponent recaptures with strictly
-              // CHEAPER piece (not equal). Equal = normal exchange, not a sacrifice.
-              if (oppPieceVal < attackerVal) {
-                isAttackedSacrifice = true;
-                break;
-              }
-            }
+          const canRecaptureCheaply = oppMoves.some(
+            om => om.to === to && (PIECE_VALUES[om.piece] || 0) < attackerVal,
+          );
+          if (canRecaptureCheaply) {
+            return {
+              move: uci,
+              isSacrifice: true,
+              pieceName: PIECE_NAMES_ID[piece.type] || piece.type,
+              targetSquare: to,
+            };
           }
         }
       } catch { /* ignore */ }
-    }
-
-    if (isTradeSacrifice || isAttackedSacrifice) {
-      const pieceName = PIECE_NAMES_ID[piece.type] || piece.type;
-      return {
-        move: uci,
-        isSacrifice: true,
-        pieceName,
-        targetSquare: to,
-      };
     }
   }
 
