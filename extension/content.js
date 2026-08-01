@@ -1,9 +1,9 @@
-// extension/content.js — v4.3: Pure Scraped DOM FEN & Robust Best Move Overlay Assist
+// extension/content.js — v4.4: High-Precision Pure DOM Scraper & Best Move Overlay
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.3 (Robust Pure DOM Assist Engine) initialized');
+  console.log('[iChess Engine] Content Script v4.4 (Precision Pure DOM Assist) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -141,7 +141,10 @@
           const parts = line.split(' ');
           const bestMove = parts[1];
           if (bestMove && bestMove !== '(none)') {
+            console.log('[iChess Engine] Stockfish recommended move:', bestMove);
             processMoveSelection(bestMove);
+          } else {
+            console.warn('[iChess Engine] Stockfish returned bestmove (none)');
           }
         }
       };
@@ -158,7 +161,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.3 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.4 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -217,7 +220,6 @@
   function parseSquareFromElement(el, isFlipped) {
     const cls = el.className || '';
 
-    // Ignore iChess overlay boxes
     if (cls.includes('ichess-')) return null;
 
     // Format A: square-0502 or square-52 (digits)
@@ -261,38 +263,61 @@
     return null;
   }
 
+  // Parse Piece Character (wk, br, white-king, black-pawn)
+  function parsePieceCharFromElement(el) {
+    const cls = el.className || '';
+
+    const m2 = cls.match(/\b([wb])([pnbrqk])\b/i);
+    if (m2) {
+      const color = m2[1].toLowerCase();
+      const type  = m2[2].toLowerCase();
+      return color === 'w' ? type.toUpperCase() : type.toLowerCase();
+    }
+
+    const mFull = cls.match(/\b(white|black)[-_]?(king|queen|rook|bishop|knight|pawn)\b/i);
+    if (mFull) {
+      const color = mFull[1].toLowerCase() === 'white' ? 'w' : 'b';
+      const name  = mFull[2].toLowerCase();
+      const typeMap = { king: 'k', queen: 'q', rook: 'r', bishop: 'b', knight: 'n', pawn: 'p' };
+      const type = typeMap[name];
+      return color === 'w' ? type.toUpperCase() : type.toLowerCase();
+    }
+
+    return null;
+  }
+
   // Multi-layer Active Turn Detector
   function detectActiveTurn(board) {
-    // 1. Check Clock Turn Indicators
+    // 1. Check Sidebar Move List (Most reliable)
+    const moveNodes = document.querySelectorAll(
+      '.move-node, wc-move-node, [data-ply], .white-moveNode, .black-moveNode'
+    );
+    if (moveNodes && moveNodes.length > 0) {
+      const lastNode = moveNodes[moveNodes.length - 1];
+      const cls = (lastNode.className || '') + ' ' + (lastNode.getAttribute('class') || '');
+      const parentCls = lastNode.parentElement ? lastNode.parentElement.className : '';
+
+      if (cls.includes('white') || parentCls.includes('white') || lastNode.matches('.white-moveNode')) {
+        return 'b';
+      }
+      if (cls.includes('black') || parentCls.includes('black') || lastNode.matches('.black-moveNode')) {
+        return 'w';
+      }
+
+      const plyAttr = lastNode.getAttribute('data-ply');
+      if (plyAttr) {
+        const ply = parseInt(plyAttr, 10);
+        return (ply % 2 === 1) ? 'b' : 'w';
+      }
+
+      return (moveNodes.length % 2 === 1) ? 'b' : 'w';
+    }
+
+    // 2. Check Clock Turn Indicators
     const whiteClock = document.querySelector('.player-component.white .clock-player-turn, .clock-white.clock-player-turn, .player-tag.white.is-turn, .player-component.bottom.white .clock-player-turn');
     const blackClock = document.querySelector('.player-component.black .clock-player-turn, .clock-black.clock-player-turn, .player-tag.black.is-turn, .player-component.bottom.black .clock-player-turn');
     if (whiteClock) return 'w';
     if (blackClock) return 'b';
-
-    // 2. Check Native Last Move Highlight Squares (Exclude iChess overlays)
-    const highlights = board.querySelectorAll('.highlight:not([class*="ichess-"])');
-    if (highlights && highlights.length >= 2) {
-      for (const hl of highlights) {
-        const parsed = parseSquareFromElement(hl, false);
-        if (parsed) {
-          const sqSel = `.square-${parsed.colIdx + 1}${parsed.rowIdx + 1}, .square-0${parsed.colIdx + 1}0${parsed.rowIdx + 1}`;
-          const piece = board.querySelector(`.piece${sqSel}, ${sqSel} .piece`);
-          if (piece) {
-            const pClass = piece.className;
-            if (/\b(w[pnbrqk]|white)\b/i.test(pClass)) return 'b';
-            if (/\b(b[pnbrqk]|black)\b/i.test(pClass)) return 'w';
-          }
-        }
-      }
-    }
-
-    // 3. Move List DOM Count
-    const moveNodes = document.querySelectorAll(
-      '.white-moveNode, .black-moveNode, wc-move-node, [data-ply]'
-    );
-    if (moveNodes && moveNodes.length > 0) {
-      return (moveNodes.length % 2 === 1) ? 'b' : 'w';
-    }
 
     const isFlipped = board.classList.contains('flipped') ||
                       board.getAttribute('facing') === 'b' ||
@@ -315,18 +340,10 @@
     const grid = Array(8).fill(null).map(() => Array(8).fill(null));
 
     pieces.forEach(el => {
-      const cls = el.className || '';
       const sq = parseSquareFromElement(el, isFlipped);
       if (!sq) return;
 
-      let pieceChar = null;
-      const pMatch = cls.match(/\b([wb])([pnbrqk])\b/i);
-      if (pMatch) {
-        const color = pMatch[1].toLowerCase();
-        const type  = pMatch[2].toLowerCase();
-        pieceChar = color === 'w' ? type.toUpperCase() : type.toLowerCase();
-      }
-
+      const pieceChar = parsePieceCharFromElement(el);
       if (pieceChar && sq.colIdx >= 0 && sq.colIdx < 8 && sq.rowIdx >= 0 && sq.rowIdx < 8) {
         grid[7 - sq.rowIdx][sq.colIdx] = pieceChar;
       }
@@ -565,6 +582,7 @@
 
     // If board position has changed, update immediately
     if (fen !== lastEvaluatedFen) {
+      console.log('[iChess Engine] Position changed, evaluating FEN:', fen);
       lastEvaluatedFen = fen;
       evaluatingFen    = fen;
 
