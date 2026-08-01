@@ -23,7 +23,7 @@ if (fs.existsSync(distParentDir)) {
 fs.mkdirSync(distFolder, { recursive: true });
 
 // 2. Minify & mangle JS files using Terser
-const jsFiles = ['content.js', 'popup.js', 'chess.js'];
+const jsFiles = ['content.js', 'popup.js', 'chess.js', 'main-world.js'];
 
 for (const file of jsFiles) {
   const srcPath = path.join(srcDir, file);

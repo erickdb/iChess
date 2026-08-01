@@ -22,6 +22,12 @@
       "js": ["chess.js", "content.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.chess.com/*"],
+      "js": ["main-world.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "action": {
@@ -35,7 +41,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["stockfish.js", "icon16.png", "icon48.png", "icon128.png"],
+      "resources": ["stockfish.js", "main-world.js", "icon16.png", "icon48.png", "icon128.png"],
       "matches": ["https://www.chess.com/*"]
     }
   ]
