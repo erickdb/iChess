@@ -1,9 +1,9 @@
-// extension/content.js — v4.0: High-Precision Universal Engine with Hooked Direct Auto-Play
+// extension/content.js — v4.1: Live Hooked FEN & Precision Auto-Player Engine
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.0 (Universal Scraper & Direct Auto-Player) initialized');
+  console.log('[iChess Engine] Content Script v4.1 (Hooked FEN + Universal Scraper) initialized');
 
   let showOverlay          = true;
   let autoPlayEnabled      = true;
@@ -23,6 +23,8 @@
   let scanIntervalId       = null;
   let lastGameFenRoot      = '';
   let hudNeedsUpdate       = true;
+  let liveHookedFen        = null;
+  let liveHookedFenTime    = 0;
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -47,6 +49,16 @@
     if (hud) hud.remove();
     clearOverlay();
   }
+
+  // Window message listener for Live Hooked FEN from main-world.js
+  window.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data !== 'object') return;
+
+    if (event.data.type === 'ICHESS_LIVE_HOOKED_FEN' && event.data.fen) {
+      liveHookedFen = event.data.fen;
+      liveHookedFenTime = Date.now();
+    }
+  });
 
   // Load saved settings & listen for messages
   if (isContextValid()) {
@@ -133,7 +145,7 @@
         if (line.startsWith('info') && line.includes(' score ')) {
           parseMpvLine(line);
         } else if (line.startsWith('bestmove')) {
-          const currentFen = extractFenFromDom();
+          const currentFen = getFenState();
           isEvaluating = false;
 
           // Discard stale bestmove if position changed during Stockfish search
@@ -163,7 +175,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.0 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.1 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -219,6 +231,14 @@
     return document.querySelector('wc-chess-board, chess-board, .board');
   }
 
+  // Unified FEN State Getter: Prefers Live Hooked FEN, Fallbacks to DOM Scraper
+  function getFenState() {
+    if (liveHookedFen && (Date.now() - liveHookedFenTime < 1000)) {
+      return liveHookedFen;
+    }
+    return extractFenFromDom();
+  }
+
   // Universal Piece Square Parser for Chess.com DOM (Handles square-0502, square-52, sq-e2, translate)
   function parseSquareFromElement(el, isFlipped) {
     const cls = el.className || '';
@@ -272,24 +292,7 @@
     if (whiteClock) return 'w';
     if (blackClock) return 'b';
 
-    // 2. Check Highlighted Last-Move Squares on Board
-    const highlights = board.querySelectorAll('.highlight, [class*="highlight-"]');
-    if (highlights && highlights.length >= 2) {
-      for (const hl of highlights) {
-        const parsed = parseSquareFromElement(hl, false);
-        if (parsed) {
-          const sqSel = `.square-${parsed.colIdx + 1}${parsed.rowIdx + 1}, .square-0${parsed.colIdx + 1}0${parsed.rowIdx + 1}`;
-          const piece = board.querySelector(`.piece${sqSel}, ${sqSel} .piece`);
-          if (piece) {
-            const pClass = piece.className;
-            if (/\b(w[pnbrqk]|white)\b/i.test(pClass)) return 'b';
-            if (/\b(b[pnbrqk]|black)\b/i.test(pClass)) return 'w';
-          }
-        }
-      }
-    }
-
-    // 3. Move List DOM Count
+    // 2. Check Move List DOM Count
     const moveNodes = document.querySelectorAll(
       '.white-moveNode, .black-moveNode, wc-move-node, [data-ply]'
     );
@@ -459,7 +462,7 @@
                   : '?! Inaccuracy';
       }
     } else if (brilliantHunter) {
-      const fen = extractFenFromDom();
+      const fen = getFenState();
       const b   = detectBrilliantSacrifice(fen, defaultBestMove);
       if (b.isSacrifice) {
         selectedMove = b.move;
@@ -629,7 +632,7 @@
 
     if (!stockfishWorker) return;
 
-    const fen = extractFenFromDom();
+    const fen = getFenState();
     if (!fen) return;
 
     // Reset move counter on new match
@@ -659,6 +662,6 @@
     }
   }
 
-  scanIntervalId = setInterval(scanBoard, 350);
+  scanIntervalId = setInterval(scanBoard, 300);
 
 })();

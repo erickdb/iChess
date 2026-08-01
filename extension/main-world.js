@@ -1,9 +1,9 @@
-// extension/main-world.js — v4.0: Prototype Interceptor & Native Game Hook
+// extension/main-world.js — v4.1: Live Hooked FEN Broadcast & Direct Move Engine
 
 (function () {
   'use strict';
 
-  console.log('[iChess Main-World Engine] v4.0 Prototype Interceptor Initializing at document_start');
+  console.log('[iChess Main-World Engine] v4.1 Prototype Interceptor Initializing at document_start');
 
   window.__iChessBoardInstance = null;
   window.__iChessGameController = null;
@@ -26,12 +26,10 @@
     };
   }
 
-  // Helper to retrieve active board element
   function getBoardElement() {
     return window.__iChessBoardInstance || document.querySelector('wc-chess-board, chess-board, .board');
   }
 
-  // Helper to retrieve active game controller instance
   function getGameController() {
     if (window.__iChessGameController) return window.__iChessGameController;
 
@@ -63,6 +61,23 @@
 
     return null;
   }
+
+  // Continuously broadcast live FEN from hooked game controller to content script
+  setInterval(() => {
+    const game = getGameController();
+    if (game) {
+      let fen = null;
+      try {
+        if (typeof game.getFen === 'function') fen = game.getFen();
+        else if (typeof game.fen === 'string') fen = game.fen;
+        else if (typeof game.getFEN === 'function') fen = game.getFEN();
+      } catch { /* ignore */ }
+
+      if (fen) {
+        window.postMessage({ type: 'ICHESS_LIVE_HOOKED_FEN', fen }, '*');
+      }
+    }
+  }, 200);
 
   // Listen for execution and reset requests from content script
   window.addEventListener('message', (event) => {
