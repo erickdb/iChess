@@ -1,9 +1,9 @@
-// extension/content.js — v1.8: Pure HTML DOM Scraping & Direct Coordinate Pointer Engine
+// extension/content.js — v2.0: Scraped-DOM Precision Engine (Matched to Live Chess.com wc-chess-board)
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v1.8 (Pure DOM Scraping Engine) loaded on Chess.com');
+  console.log('[iChess Engine] Content Script v2.0 (Live Scraped-DOM Engine) loaded on Chess.com');
 
   const ChessCtor = window.Chess || (typeof Chess !== 'undefined' ? Chess : null);
 
@@ -26,7 +26,7 @@
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
-  // Guard against "Extension context invalidated"
+  // Guard against extension context invalidation
   function isContextValid() {
     try {
       return Boolean(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
@@ -49,7 +49,7 @@
     clearOverlay();
   }
 
-  // Sync settings
+  // Load and listen for settings changes
   if (isContextValid()) {
     try {
       chrome.storage.local.get({
@@ -98,7 +98,7 @@
     }
   }
 
-  // Stockfish Worker
+  // Stockfish Worker initialization
   function initWorker() {
     if (stockfishWorker) return;
     if (!isContextValid()) {
@@ -136,7 +136,7 @@
         `setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`
       );
       stockfishWorker.postMessage('isready');
-      console.log('[iChess Engine] Stockfish Worker v1.8 Ready');
+      console.log('[iChess Engine] Stockfish Worker v2.0 Ready');
     } catch (err) {
       isEvaluating = false;
       if (err.message && err.message.includes('invalidated')) {
@@ -165,7 +165,7 @@
     mpvList[rank - 1] = { move: pvMoves[0], cp, pvArray: pvMoves };
   }
 
-  // HUD Status Display
+  // Live HUD Status Bar
   function updateHudStatus() {
     if (!hudNeedsUpdate) return;
     hudNeedsUpdate = false;
@@ -187,23 +187,25 @@
     hud.innerHTML = `<div class="dot"></div><div>iChess: ${statusText}</div>`;
   }
 
-  // Primary Board Element
+  // Target Chessboard Component Element
   function getBoardElement() {
     return document.querySelector('wc-chess-board, chess-board, .board');
   }
 
-  // 100% PURE HTML DOM SCRAPING FEN EXTRACTOR
-  function extractFen() {
+  // 100% SCRAPED DOM FEN EXTRACTOR (Based on Live Chess.com wc-chess-board structure)
+  function extractFenFromDom() {
     const board = getBoardElement();
     if (!board) return null;
 
-    // Strategy 1: Direct DOM Property
+    // Strategy 1: Native Web Component JS API
     if (board.game) {
       if (typeof board.game.getFen === 'function') return board.game.getFen();
       if (typeof board.game.fen === 'string') return board.game.fen;
+      if (typeof board.game.getFEN === 'function') return board.game.getFEN();
     }
 
-    // Strategy 2: Pure HTML Piece Scraping (Works on ALL pages: vs Bot, vs Human, Daily, Puzzles)
+    // Strategy 2: Direct Scraped DOM Piece Tree Parsing
+    // Scraped pattern: <div class="piece wp square-52"></div> (Column 5 = e, Row 2 = 2)
     const pieces = board.querySelectorAll('.piece');
     if (!pieces || pieces.length === 0) return null;
 
@@ -212,22 +214,22 @@
     pieces.forEach(el => {
       const cls = el.className;
       let pieceChar = null;
-      let fileIdx = -1;
-      let rankIdx = -1;
+      let colIdx = -1; // 0..7 for col a..h
+      let rowIdx = -1; // 0..7 for row 1..8
 
-      // Extract square: e.g. square-42 (file 4 = d, rank 2 = 2) or square-d4 or sq-d4
+      // Match square class: square-52 or square-e2 or sq-e2
       const sqMatch = cls.match(/square-(\d)(\d)/) || cls.match(/sq-([a-h])([1-8])/) || cls.match(/square-([a-h])([1-8])/);
       if (sqMatch) {
         if (/^\d$/.test(sqMatch[1])) {
-          fileIdx = parseInt(sqMatch[1], 10) - 1;
-          rankIdx = parseInt(sqMatch[2], 10) - 1;
+          colIdx = parseInt(sqMatch[1], 10) - 1; // 1-based to 0-based
+          rowIdx = parseInt(sqMatch[2], 10) - 1; // 1-based to 0-based
         } else {
-          fileIdx = sqMatch[1].charCodeAt(0) - 97;
-          rankIdx = parseInt(sqMatch[2], 10) - 1;
+          colIdx = sqMatch[1].charCodeAt(0) - 97;
+          rowIdx = parseInt(sqMatch[2], 10) - 1;
         }
       }
 
-      // Extract piece type & color: e.g. wp, bn, bq, wr, etc.
+      // Match piece color and type: wp, bp, wn, bn, wb, bb, wr, br, wq, bq, wk, bk
       const pMatch = cls.match(/\b([wb])([pnbrqk])\b/i);
       if (pMatch) {
         const color = pMatch[1].toLowerCase();
@@ -235,11 +237,12 @@
         pieceChar = color === 'w' ? type.toUpperCase() : type.toLowerCase();
       }
 
-      if (fileIdx >= 0 && fileIdx < 8 && rankIdx >= 0 && rankIdx < 8 && pieceChar) {
-        grid[7 - rankIdx][fileIdx] = pieceChar;
+      if (colIdx >= 0 && colIdx < 8 && rowIdx >= 0 && rowIdx < 8 && pieceChar) {
+        grid[7 - rowIdx][colIdx] = pieceChar;
       }
     });
 
+    // Construct 8 ranks of FEN
     let fenRows = [];
     for (let r = 0; r < 8; r++) {
       let rowStr = '';
@@ -260,9 +263,11 @@
       fenRows.push(rowStr);
     }
 
-    // Read active turn from move list in DOM or board orientation
+    // Determine Active Turn from Scraped DOM Move List
     let activeTurn = 'w';
-    const moveNodes = document.querySelectorAll('.move-list-component .node, vertical-move-list .node, .move-node, [data-whole-move-number]');
+    const moveNodes = document.querySelectorAll(
+      '.white-moveNode, .black-moveNode, .move-node, [data-ply], .move-row .node'
+    );
     if (moveNodes && moveNodes.length > 0) {
       activeTurn = (moveNodes.length % 2 === 1) ? 'b' : 'w';
     } else {
@@ -275,13 +280,13 @@
     return `${fenRows.join('/')} ${activeTurn} KQkq - 0 1`;
   }
 
-  // Pure Math-Based 8x8 Grid Coordinate Calculation
+  // Exact Grid Mapping for Scraped Chess.com Squares
   function getSquareCoordinates(board, sq) {
     if (!sq || sq.length < 2) return null;
 
     const rect    = board.getBoundingClientRect();
-    const fileIdx = sq.charCodeAt(0) - 97;
-    const rankNum = parseInt(sq[1], 10);
+    const fileIdx = sq.charCodeAt(0) - 97; // 'a' -> 0, 'h' -> 7
+    const rankNum = parseInt(sq[1], 10);   // 1..8
 
     const isFlipped = board.classList.contains('flipped') ||
                       board.getAttribute('facing') === 'b' ||
@@ -300,12 +305,12 @@
       topPct:    (row / 8) * 100,
       widthPct:  12.5,
       heightPct: 12.5,
-      fileIdx,
-      rankNum,
+      colNumber: fileIdx + 1, // 1..8
+      rowNumber: rankNum,     // 1..8
     };
   }
 
-  // Draw overlay highlights on Chess.com Board
+  // Draw Overlay Anchored inside Relative Board Container
   function drawOverlay(fromSq, toSq, moveType = 'best', badgeText = '') {
     clearOverlay();
     if (!showOverlay) return;
@@ -313,7 +318,7 @@
     const board = getBoardElement();
     if (!board) return;
 
-    // Anchor overlay inside relative board container
+    // Anchor overlay positioning context inside board component
     if (window.getComputedStyle(board).position === 'static') {
       board.style.position = 'relative';
     }
@@ -321,7 +326,7 @@
     const container = document.createElement('div');
     container.id = 'ichess-overlay-container';
 
-    // Source Highlight
+    // Source Highlight (Cyan)
     const fromCoords = getSquareCoordinates(board, fromSq);
     if (fromCoords) {
       const el = document.createElement('div');
@@ -330,7 +335,7 @@
       container.appendChild(el);
     }
 
-    // Target Highlight & Badges
+    // Target Highlight & Badges (Green / Red / Orange)
     const toCoords = getSquareCoordinates(board, toSq);
     if (toCoords) {
       const cls = moveType === 'brilliant'
@@ -358,7 +363,7 @@
     if (el) el.remove();
   }
 
-  // Process Move Selection
+  // Move Selection & Triggering
   function processMoveSelection(defaultBestMove) {
     moveCounter++;
     let selectedMove = defaultBestMove;
@@ -377,7 +382,7 @@
                   : '?! Inaccuracy';
       }
     } else if (brilliantHunter) {
-      const fen = extractFen();
+      const fen = extractFenFromDom();
       const b   = detectBrilliantSacrifice(fen, defaultBestMove);
       if (b.isSacrifice) {
         selectedMove = b.move;
@@ -396,7 +401,7 @@
     }
   }
 
-  // Brilliant Hunter Algorithm
+  // Brilliant Hunter Sacrifice Scanner
   function detectBrilliantSacrifice(fen, defaultBest) {
     const valid = mpvList.filter(i => i && i.move && i.move.length >= 4);
     if (valid.length === 0) return { move: defaultBest, isSacrifice: false };
@@ -463,7 +468,7 @@
     return valid[1]?.move || defaultBest;
   }
 
-  // 100% PURE HTML DOM AUTO-PLAY DISPATCHER
+  // Live Auto-Play Dispatcher (Targets exact Scraped DOM piece classes .square-52)
   function autoPlayMove(fromSq, toSq) {
     const board = getBoardElement();
     if (!board) return;
@@ -480,25 +485,31 @@
       return;
     }
 
-    const fileNumFrom = fromC.fileIdx + 1;
-    const rankNumFrom = fromC.rankNum;
-    const fileNumTo   = toC.fileIdx + 1;
-    const rankNumTo   = toC.rankNum;
+    // Method A: Direct JS API call if available on wc-chess-board
+    if (board.game && typeof board.game.makeMove === 'function') {
+      try {
+        board.game.makeMove(fromSq + toSq);
+        clearTimeout(safetyTimer);
+        isExecutingMove = false;
+        return;
+      } catch { /* fallback */ }
+    }
 
-    // Find source piece element in HTML DOM
-    const sourceEl = board.querySelector(`.square-${fileNumFrom}${rankNumFrom}, .sq-${fromSq}, .square-${fromSq}`) ||
+    // Method B: Precise Scraped DOM Element Click Sequence
+    // Target scraped format: .piece.square-52 (col 5 = e, row 2 = 2)
+    const sourceEl = board.querySelector(`.piece.square-${fromC.colNumber}${fromC.rowNumber}, .square-${fromC.colNumber}${fromC.rowNumber}, .sq-${fromSq}`) ||
                      document.elementFromPoint(fromC.x, fromC.y);
 
-    const targetEl = board.querySelector(`.square-${fileNumTo}${rankNumTo}, .sq-${toSq}, .square-${toSq}`) ||
+    const targetEl = board.querySelector(`.square-${toC.colNumber}${toC.rowNumber}, .sq-${toSq}`) ||
                      document.elementFromPoint(toC.x, toC.y);
 
     const delay = Math.floor(Math.random() * 300) + 350;
 
     setTimeout(() => {
-      // 1. Click source piece
+      // Step 1: Click source piece
       dispatchEventsOn(sourceEl || document.elementFromPoint(fromC.x, fromC.y), fromC.x, fromC.y);
 
-      // 2. Click target square
+      // Step 2: Click target square
       setTimeout(() => {
         dispatchEventsOn(targetEl || document.elementFromPoint(toC.x, toC.y), toC.x, toC.y);
         clearTimeout(safetyTimer);
@@ -529,7 +540,7 @@
 
     if (!stockfishWorker) return;
 
-    const fen = extractFen();
+    const fen = extractFenFromDom();
     if (!fen || fen === lastEvaluatedFen || isEvaluating) return;
 
     const fenRoot = fen.split(' ')[0];
