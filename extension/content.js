@@ -1,9 +1,9 @@
-// extension/content.js — v1.6: Full Bug-Fix Pass
+// extension/content.js — v1.7: Multi-Strategy FEN Extractor, Absolute Overlay Anchoring, Real Auto-Play Dispatcher
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v1.6 loaded on Chess.com');
+  console.log('[iChess Engine] Content Script v1.7 loaded on Chess.com');
 
   const ChessCtor = window.Chess || (typeof Chess !== 'undefined' ? Chess : null);
 
@@ -21,12 +21,12 @@
   let mpvList          = [];
   let isExecutingMove  = false;
   let scanIntervalId   = null;
-  let lastGameFenRoot  = '';    // BUG#2: detect game reset → reset moveCounter
-  let hudNeedsUpdate   = true; // BUG#1: only rebuild HUD when settings actually change
+  let lastGameFenRoot  = '';
+  let hudNeedsUpdate   = true;
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
-  // ── Context Guard ─────────────────────────────────────────────────────────
+  // Guard against "Extension context invalidated" error when extension is reloaded
   function isContextValid() {
     try {
       return Boolean(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
@@ -49,7 +49,7 @@
     clearOverlay();
   }
 
-  // ── Settings sync ─────────────────────────────────────────────────────────
+  // Sync settings from chrome storage or popup messaging
   if (isContextValid()) {
     try {
       chrome.storage.local.get({
@@ -91,7 +91,7 @@
           updateHudStatus();
           if (!showOverlay) clearOverlay();
 
-          // Depth changed — force re-evaluate current position
+          // Force re-evaluate position on depth change
           lastEvaluatedFen = '';
         }
       });
@@ -100,7 +100,7 @@
     }
   }
 
-  // ── Stockfish Worker ──────────────────────────────────────────────────────
+  // Initialize Stockfish Web Worker
   function initWorker() {
     if (stockfishWorker) return;
     if (!isContextValid()) {
@@ -129,7 +129,7 @@
 
       stockfishWorker.onerror = (err) => {
         console.error('[iChess Engine] Worker error:', err);
-        isEvaluating = false; // BUG#7: unstick on worker error
+        isEvaluating = false;
       };
 
       stockfishWorker.postMessage('uci');
@@ -138,9 +138,9 @@
         `setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`
       );
       stockfishWorker.postMessage('isready');
-      console.log('[iChess Engine] Stockfish Worker v1.6 Ready');
+      console.log('[iChess Engine] Stockfish Worker v1.7 Ready');
     } catch (err) {
-      isEvaluating = false; // BUG#7: unstick on init fail
+      isEvaluating = false;
       if (err.message && err.message.includes('invalidated')) {
         cleanupOnInvalidatedContext();
         return;
@@ -149,7 +149,6 @@
     }
   }
 
-  // ── MultiPV Parser ────────────────────────────────────────────────────────
   function parseMpvLine(line) {
     const cpMatch   = line.match(/score cp (-?\d+)/);
     const mateMatch = line.match(/score mate (-?\d+)/);
@@ -168,7 +167,7 @@
     mpvList[rank - 1] = { move: pvMoves[0], cp, pvArray: pvMoves };
   }
 
-  // ── HUD — only rebuild when state changes (BUG#1 fix) ────────────────────
+  // HUD Status Display
   function updateHudStatus() {
     if (!hudNeedsUpdate) return;
     hudNeedsUpdate = false;
@@ -190,20 +189,36 @@
     hud.innerHTML = `<div class="dot"></div><div>iChess: ${statusText}</div>`;
   }
 
-  // ── FEN Extractor ─────────────────────────────────────────────────────────
+  // Get Primary Board DOM Element
+  function getBoardElement() {
+    return document.querySelector('wc-chess-board, chess-board, .board');
+  }
+
+  // Multi-Strategy FEN Extractor (Robust against all Chess.com React/DOM updates)
   function extractFen() {
-    const board = document.querySelector('wc-chess-board, chess-board, .board');
+    const board = getBoardElement();
     if (!board) return null;
 
+    // Strategy 1: Direct DOM element properties
+    if (board.game) {
+      if (typeof board.game.getFen === 'function') return board.game.getFen();
+      if (typeof board.game.fen === 'string') return board.game.fen;
+    }
+    if (board.controller) {
+      if (typeof board.controller.getFen === 'function') return board.controller.getFen();
+    }
+
+    // Strategy 2: Deep React Fiber Traversal
     const reactKey = Object.keys(board).find(
       k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$')
     );
     if (reactKey && board[reactKey]) {
       const findFen = (obj, depth = 0) => {
-        if (!obj || depth > 4) return null;
+        if (!obj || depth > 5) return null;
         if (typeof obj.getFen === 'function') return obj.getFen();
         if (typeof obj.fen === 'string') return obj.fen;
-        for (const key of ['game', 'props', 'children', 'memoizedProps', 'stateNode']) {
+
+        for (const key of ['game', 'props', 'children', 'memoizedProps', 'stateNode', 'controller']) {
           if (obj[key]) {
             const r = findFen(obj[key], depth + 1);
             if (r) return r;
@@ -215,16 +230,89 @@
       if (fen) return fen;
     }
 
-    return board.getAttribute('data-fen') || null;
+    // Strategy 3: HTML Attributes
+    const attrFen = board.getAttribute('data-fen') || board.getAttribute('fen');
+    if (attrFen) return attrFen;
+
+    // Strategy 4: Fallback DOM Piece Scraping
+    return scrapeFenFromDom(board);
   }
 
-  // ── Coordinate Calculator ─────────────────────────────────────────────────
+  // Fallback: Reconstruct FEN from DOM piece elements inside board
+  function scrapeFenFromDom(board) {
+    const pieces = board.querySelectorAll('.piece');
+    if (!pieces || pieces.length === 0) return null;
+
+    const grid = Array(8).fill(null).map(() => Array(8).fill(null));
+
+    pieces.forEach(el => {
+      const cls = el.className;
+      let pieceChar = null;
+      let fileIdx = -1;
+      let rankIdx = -1;
+
+      // Extract square: e.g. sq-e4 or square-54 or square-e4
+      const sqMatch = cls.match(/square-(\d)(\d)/) || cls.match(/sq-([a-h])([1-8])/) || cls.match(/square-([a-h])([1-8])/);
+      if (sqMatch) {
+        if (/^\d$/.test(sqMatch[1])) {
+          fileIdx = parseInt(sqMatch[1], 10) - 1;
+          rankIdx = parseInt(sqMatch[2], 10) - 1;
+        } else {
+          fileIdx = sqMatch[1].charCodeAt(0) - 97;
+          rankIdx = parseInt(sqMatch[2], 10) - 1;
+        }
+      }
+
+      // Extract piece type & color: e.g. wp, bn, bq, wr, etc.
+      const pMatch = cls.match(/\b([wb])([pnbrqk])\b/i);
+      if (pMatch) {
+        const color = pMatch[1].toLowerCase();
+        const type  = pMatch[2].toLowerCase();
+        pieceChar = color === 'w' ? type.toUpperCase() : type.toLowerCase();
+      }
+
+      if (fileIdx >= 0 && fileIdx < 8 && rankIdx >= 0 && rankIdx < 8 && pieceChar) {
+        grid[7 - rankIdx][fileIdx] = pieceChar;
+      }
+    });
+
+    // Build FEN string rows (8 down to 1)
+    let fenRows = [];
+    for (let r = 0; r < 8; r++) {
+      let rowStr = '';
+      let emptyCount = 0;
+      for (let c = 0; c < 8; c++) {
+        const p = grid[r][c];
+        if (!p) {
+          emptyCount++;
+        } else {
+          if (emptyCount > 0) {
+            rowStr += emptyCount;
+            emptyCount = 0;
+          }
+          rowStr += p;
+        }
+      }
+      if (emptyCount > 0) rowStr += emptyCount;
+      fenRows.push(rowStr);
+    }
+
+    // Determine active turn (b if board is flipped or player is Black)
+    const isFlipped = board.classList.contains('flipped') ||
+                      board.getAttribute('facing') === 'b' ||
+                      board.getAttribute('orientation') === 'black';
+
+    const turn = isFlipped ? 'b' : 'w';
+    return `${fenRows.join('/')} ${turn} KQkq - 0 1`;
+  }
+
+  // Pure Math-Based 8x8 Grid Coordinate Calculation
   function getSquareCoordinates(board, sq) {
     if (!sq || sq.length < 2) return null;
 
-    const rect     = board.getBoundingClientRect();
-    const fileIdx  = sq.charCodeAt(0) - 97;
-    const rankNum  = parseInt(sq[1], 10);
+    const rect    = board.getBoundingClientRect();
+    const fileIdx = sq.charCodeAt(0) - 97;
+    const rankNum = parseInt(sq[1], 10);
 
     const isFlipped = board.classList.contains('flipped') ||
                       board.getAttribute('facing') === 'b' ||
@@ -243,20 +331,29 @@
       topPct:    (row / 8) * 100,
       widthPct:  12.5,
       heightPct: 12.5,
+      fileIdx,
+      rankNum,
     };
   }
 
-  // ── Overlay Renderer ──────────────────────────────────────────────────────
+  // Draw overlay highlights on Chess.com Board
   function drawOverlay(fromSq, toSq, moveType = 'best', badgeText = '') {
     clearOverlay();
     if (!showOverlay) return;
 
-    const board = document.querySelector('wc-chess-board, chess-board, .board');
+    const board = getBoardElement();
     if (!board) return;
+
+    // CRITICAL: Ensure board container has CSS relative positioning
+    const computedPos = window.getComputedStyle(board).position;
+    if (computedPos === 'static') {
+      board.style.position = 'relative';
+    }
 
     const container = document.createElement('div');
     container.id = 'ichess-overlay-container';
 
+    // Source Highlight
     const fromCoords = getSquareCoordinates(board, fromSq);
     if (fromCoords) {
       const el = document.createElement('div');
@@ -265,6 +362,7 @@
       container.appendChild(el);
     }
 
+    // Target Highlight & Custom Badges
     const toCoords = getSquareCoordinates(board, toSq);
     if (toCoords) {
       const cls = moveType === 'brilliant'
@@ -279,7 +377,7 @@
 
       const badge = document.createElement('div');
       badge.className = `ichess-move-badge ${moveType}`;
-      badge.innerText = badgeText || `${fromSq}→${toSq}`;
+      badge.innerText = badgeText || `${fromSq}➔${toSq}`;
       el.appendChild(badge);
       container.appendChild(el);
     }
@@ -292,7 +390,7 @@
     if (el) el.remove();
   }
 
-  // ── Move Selection ────────────────────────────────────────────────────────
+  // Process Move Selection
   function processMoveSelection(defaultBestMove) {
     moveCounter++;
     let selectedMove = defaultBestMove;
@@ -330,7 +428,7 @@
     }
   }
 
-  // ── Brilliant Hunter ──────────────────────────────────────────────────────
+  // Brilliant Hunter Algorithm
   function detectBrilliantSacrifice(fen, defaultBest) {
     const valid = mpvList.filter(i => i && i.move && i.move.length >= 4);
     if (valid.length === 0) return { move: defaultBest, isSacrifice: false };
@@ -380,7 +478,7 @@
     return { move: defaultBest, isSacrifice: false };
   }
 
-  // ── Mistake Selector ──────────────────────────────────────────────────────
+  // Mistake Selector
   function selectMistakeMove(defaultBest) {
     const valid = mpvList.filter(i => i && i.move && i.move.length >= 4);
     if (valid.length <= 1) return defaultBest;
@@ -397,49 +495,33 @@
     return valid[1]?.move || defaultBest;
   }
 
-  // ── Auto-Play — BUG#3 fix: safety reset on isExecutingMove ───────────────
+  // Real Auto-Play Dispatcher (Combined UserMove API + Piece Element Drag/Click Simulation)
   function autoPlayMove(fromSq, toSq) {
-    const board = document.querySelector('wc-chess-board, chess-board, .board');
+    const board = getBoardElement();
     if (!board) return;
 
     isExecutingMove = true;
-
-    // Safety: always release the lock after max 3 seconds
     const safetyTimer = setTimeout(() => { isExecutingMove = false; }, 3000);
 
-    // Method A: Direct React internal game object
-    const reactKey = Object.keys(board).find(
-      k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$')
-    );
-    if (reactKey && board[reactKey]) {
-      const findGameObj = (obj, d = 0) => {
-        if (!obj || d > 4) return null;
-        if (typeof obj.userMove === 'function' || typeof obj.move === 'function' || typeof obj.makeMove === 'function') return obj;
-        for (const key of ['game', 'props', 'children', 'memoizedProps']) {
-          if (obj[key]) { const r = findGameObj(obj[key], d + 1); if (r) return r; }
-        }
-        return null;
-      };
-
-      const gObj = findGameObj(board[reactKey]);
-      if (gObj) {
-        try {
-          if (typeof gObj.userMove === 'function') {
-            gObj.userMove(fromSq + toSq);
-            clearTimeout(safetyTimer);
-            isExecutingMove = false;
-            return;
-          } else if (typeof gObj.move === 'function') {
-            gObj.move({ from: fromSq, to: toSq, promotion: 'q' });
-            clearTimeout(safetyTimer);
-            isExecutingMove = false;
-            return;
-          }
-        } catch { /* fallback */ }
-      }
+    // Method A: Direct UserMove API on Chess.com Controller
+    if (board.game && typeof board.game.userMove === 'function') {
+      try {
+        board.game.userMove(fromSq + toSq);
+        clearTimeout(safetyTimer);
+        isExecutingMove = false;
+        return;
+      } catch { /* fallback */ }
+    }
+    if (board.controller && typeof board.controller.makeMove === 'function') {
+      try {
+        board.controller.makeMove(fromSq, toSq);
+        clearTimeout(safetyTimer);
+        isExecutingMove = false;
+        return;
+      } catch { /* fallback */ }
     }
 
-    // Method B: Pointer Event coordinate click
+    // Method B: DOM Click on Piece Element & Target Square Coordinates
     const fromC = getSquareCoordinates(board, fromSq);
     const toC   = getSquareCoordinates(board, toSq);
 
@@ -449,19 +531,42 @@
       return;
     }
 
+    // Find the piece element on the source square
+    const fileNum = fromC.fileIdx + 1;
+    const rankNum = fromC.rankNum;
+    const pieceEl = board.querySelector(
+      `.square-${fileNum}${rankNum}, .sq-${fromSq}, .square-${fromSq}`
+    ) || document.elementFromPoint(fromC.x, fromC.y);
+
     const delay = Math.floor(Math.random() * 350) + 400;
+
     setTimeout(() => {
-      dispatchClickAtCoords(fromC.x, fromC.y);
+      // Step 1: Click/Select Source Piece
+      if (pieceEl) {
+        dispatchClickOnElement(pieceEl, fromC.x, fromC.y);
+      } else {
+        dispatchClickAtCoords(fromC.x, fromC.y);
+      }
+
+      // Step 2: Click Target Square
       setTimeout(() => {
-        dispatchClickAtCoords(toC.x, toC.y);
+        const targetSqEl = board.querySelector(
+          `.square-${toC.fileIdx + 1}${toC.rankNum}, .sq-${toSq}, .square-${toSq}`
+        ) || document.elementFromPoint(toC.x, toC.y);
+
+        if (targetSqEl) {
+          dispatchClickOnElement(targetSqEl, toC.x, toC.y);
+        } else {
+          dispatchClickAtCoords(toC.x, toC.y);
+        }
+
         clearTimeout(safetyTimer);
         isExecutingMove = false;
-      }, 150);
+      }, 180);
     }, delay);
   }
 
-  function dispatchClickAtCoords(x, y) {
-    const el   = document.elementFromPoint(x, y) || document.body;
+  function dispatchClickOnElement(el, x, y) {
     const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true };
     el.dispatchEvent(new PointerEvent('pointerdown', opts));
     el.dispatchEvent(new MouseEvent('mousedown',    opts));
@@ -470,7 +575,12 @@
     el.dispatchEvent(new MouseEvent('click',        opts));
   }
 
-  // ── Main Scan Loop ────────────────────────────────────────────────────────
+  function dispatchClickAtCoords(x, y) {
+    const el   = document.elementFromPoint(x, y) || document.body;
+    dispatchClickOnElement(el, x, y);
+  }
+
+  // Main Scan Loop
   function scanBoard() {
     if (!isContextValid()) {
       cleanupOnInvalidatedContext();
@@ -478,17 +588,15 @@
     }
 
     initWorker();
-    updateHudStatus(); // BUG#1: no-ops unless hudNeedsUpdate = true
+    updateHudStatus();
 
     if (!stockfishWorker) return;
 
     const fen = extractFen();
     if (!fen || fen === lastEvaluatedFen || isEvaluating) return;
 
-    // BUG#2: detect new game by checking if starting FEN root changed (piece placement part)
-    const fenRoot = fen.split(' ')[0]; // piece placement only, ignore move counter
+    const fenRoot = fen.split(' ')[0];
     if (lastGameFenRoot && fenRoot !== lastGameFenRoot && fen.includes('rnbqkbnr/pppppppp')) {
-      // New game started — reset move counter
       moveCounter = 0;
       console.log('[iChess Engine] New game detected, move counter reset');
     }
