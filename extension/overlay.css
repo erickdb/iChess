@@ -15,8 +15,10 @@
   box-sizing: border-box !important;
   border-radius: 6px !important;
   pointer-events: none !important;
-  transition: all 0.15s ease-out !important;
+  transition: opacity 0.15s ease-out !important;
   animation: ichessPulse 1.8s infinite ease-in-out !important;
+  /* Prevent animation from scaling children (badge text) */
+  will-change: opacity !important;
 }
 
 .ichess-highlight-from {
@@ -114,7 +116,7 @@
 }
 
 @keyframes ichessPulse {
-  0% { opacity: 0.8; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.02); }
-  100% { opacity: 0.8; transform: scale(1); }
+  0%   { opacity: 0.75; }
+  50%  { opacity: 1;    }
+  100% { opacity: 0.75; }
 }

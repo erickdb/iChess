@@ -1,9 +1,9 @@
-// extension/content.js — Advanced Engine Assistant with Invalidated Context Guard & Auto-Cleanup
+// extension/content.js — v1.6: Full Bug-Fix Pass
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v1.5 loaded on Chess.com');
+  console.log('[iChess Engine] Content Script v1.6 loaded on Chess.com');
 
   const ChessCtor = window.Chess || (typeof Chess !== 'undefined' ? Chess : null);
 
@@ -11,21 +11,22 @@
   let autoPlayEnabled = false;
   let brilliantHunter = false;
   let targetDepth     = 12;
-  let mistakeInterval = 0;          // 0 = Disabled, 3 = Every 3 moves, etc.
-  let mistakeSeverity = 'mistake';  // 'inaccuracy' | 'mistake' | 'blunder'
+  let mistakeInterval = 0;
+  let mistakeSeverity = 'mistake';
 
   let stockfishWorker  = null;
   let lastEvaluatedFen = '';
   let isEvaluating     = false;
-  let moveCounter      = 0;         // Tracks game move count for mistake scheduling
+  let moveCounter      = 0;
   let mpvList          = [];
   let isExecutingMove  = false;
   let scanIntervalId   = null;
+  let lastGameFenRoot  = '';    // BUG#2: detect game reset → reset moveCounter
+  let hudNeedsUpdate   = true; // BUG#1: only rebuild HUD when settings actually change
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-  const PIECE_NAMES_ID = { p: 'Pion', n: 'Kuda', b: 'Gajah', r: 'Benteng', q: 'Menteri' };
 
-  // Guard against "Extension context invalidated" error when extension is reloaded
+  // ── Context Guard ─────────────────────────────────────────────────────────
   function isContextValid() {
     try {
       return Boolean(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
@@ -43,9 +44,12 @@
       try { stockfishWorker.terminate(); } catch { /* ignore */ }
       stockfishWorker = null;
     }
+    const hud = document.getElementById('ichess-hud-status');
+    if (hud) hud.remove();
+    clearOverlay();
   }
 
-  // Sync settings from chrome storage or popup messaging
+  // ── Settings sync ─────────────────────────────────────────────────────────
   if (isContextValid()) {
     try {
       chrome.storage.local.get({
@@ -63,6 +67,7 @@
         targetDepth     = res.depth;
         mistakeInterval = res.mistakeInterval;
         mistakeSeverity = res.mistakeSeverity;
+        hudNeedsUpdate  = true;
         updateHudStatus();
       });
 
@@ -77,11 +82,17 @@
           mistakeSeverity = msg.config.mistakeSeverity;
 
           if (stockfishWorker) {
-            stockfishWorker.postMessage(`setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`);
+            stockfishWorker.postMessage(
+              `setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`
+            );
           }
 
+          hudNeedsUpdate = true;
           updateHudStatus();
           if (!showOverlay) clearOverlay();
+
+          // Depth changed — force re-evaluate current position
+          lastEvaluatedFen = '';
         }
       });
     } catch {
@@ -89,7 +100,7 @@
     }
   }
 
-  // Initialize Stockfish Web Worker
+  // ── Stockfish Worker ──────────────────────────────────────────────────────
   function initWorker() {
     if (stockfishWorker) return;
     if (!isContextValid()) {
@@ -116,12 +127,20 @@
         }
       };
 
+      stockfishWorker.onerror = (err) => {
+        console.error('[iChess Engine] Worker error:', err);
+        isEvaluating = false; // BUG#7: unstick on worker error
+      };
+
       stockfishWorker.postMessage('uci');
       stockfishWorker.postMessage('setoption name Hash value 32');
-      stockfishWorker.postMessage('setoption name MultiPV value 5');
+      stockfishWorker.postMessage(
+        `setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`
+      );
       stockfishWorker.postMessage('isready');
-      console.log('[iChess Engine] Stockfish Worker v1.5 Ready');
+      console.log('[iChess Engine] Stockfish Worker v1.6 Ready');
     } catch (err) {
+      isEvaluating = false; // BUG#7: unstick on init fail
       if (err.message && err.message.includes('invalidated')) {
         cleanupOnInvalidatedContext();
         return;
@@ -130,6 +149,7 @@
     }
   }
 
+  // ── MultiPV Parser ────────────────────────────────────────────────────────
   function parseMpvLine(line) {
     const cpMatch   = line.match(/score cp (-?\d+)/);
     const mateMatch = line.match(/score mate (-?\d+)/);
@@ -137,8 +157,8 @@
     const mpvMatch  = line.match(/multipv\s(\d+)/);
 
     if (!pvMatch || !mpvMatch) return;
-    const rank     = parseInt(mpvMatch[1], 10);
-    const pvMoves  = pvMatch[1].trim().split(/\s+/);
+    const rank    = parseInt(mpvMatch[1], 10);
+    const pvMoves = pvMatch[1].trim().split(/\s+/);
     const cp = cpMatch
       ? parseInt(cpMatch[1], 10)
       : mateMatch
@@ -148,8 +168,11 @@
     mpvList[rank - 1] = { move: pvMoves[0], cp, pvArray: pvMoves };
   }
 
-  // HUD Status Display on Chess.com Page
+  // ── HUD — only rebuild when state changes (BUG#1 fix) ────────────────────
   function updateHudStatus() {
+    if (!hudNeedsUpdate) return;
+    hudNeedsUpdate = false;
+
     let hud = document.getElementById('ichess-hud-status');
     if (!hud) {
       hud = document.createElement('div');
@@ -164,52 +187,44 @@
     if (mistakeInterval > 0) statusText += ` | ⚠️ Mistake: 1/${mistakeInterval}`;
     if (autoPlayEnabled) statusText += ' | ⚡ Auto-Play';
 
-    hud.innerHTML = `
-      <div class="dot"></div>
-      <div>iChess: ${statusText}</div>
-    `;
+    hud.innerHTML = `<div class="dot"></div><div>iChess: ${statusText}</div>`;
   }
 
-  // Extract FEN from Chess.com DOM / React Props
+  // ── FEN Extractor ─────────────────────────────────────────────────────────
   function extractFen() {
     const board = document.querySelector('wc-chess-board, chess-board, .board');
     if (!board) return null;
 
-    const reactKey = Object.keys(board).find(k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$'));
+    const reactKey = Object.keys(board).find(
+      k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$')
+    );
     if (reactKey && board[reactKey]) {
-      const node = board[reactKey];
-
-      const findFenInObject = (obj, depth = 0) => {
+      const findFen = (obj, depth = 0) => {
         if (!obj || depth > 4) return null;
         if (typeof obj.getFen === 'function') return obj.getFen();
         if (typeof obj.fen === 'string') return obj.fen;
-
         for (const key of ['game', 'props', 'children', 'memoizedProps', 'stateNode']) {
           if (obj[key]) {
-            const res = findFenInObject(obj[key], depth + 1);
-            if (res) return res;
+            const r = findFen(obj[key], depth + 1);
+            if (r) return r;
           }
         }
         return null;
       };
-
-      const fen = findFenInObject(node);
+      const fen = findFen(board[reactKey]);
       if (fen) return fen;
     }
 
-    const fenAttr = board.getAttribute('data-fen');
-    if (fenAttr) return fenAttr;
-
-    return null;
+    return board.getAttribute('data-fen') || null;
   }
 
-  // Pure Math-Based 8x8 Grid Coordinate Calculation
+  // ── Coordinate Calculator ─────────────────────────────────────────────────
   function getSquareCoordinates(board, sq) {
     if (!sq || sq.length < 2) return null;
 
-    const rect = board.getBoundingClientRect();
-    const fileIdx = sq.charCodeAt(0) - 97; // 'a' -> 0, 'h' -> 7
-    const rankNum = parseInt(sq[1], 10);   // 1 .. 8
+    const rect     = board.getBoundingClientRect();
+    const fileIdx  = sq.charCodeAt(0) - 97;
+    const rankNum  = parseInt(sq[1], 10);
 
     const isFlipped = board.classList.contains('flipped') ||
                       board.getAttribute('facing') === 'b' ||
@@ -218,19 +233,20 @@
     const col = isFlipped ? (7 - fileIdx) : fileIdx;
     const row = isFlipped ? (rankNum - 1) : (8 - rankNum);
 
-    const squareWidth  = rect.width / 8;
-    const squareHeight = rect.height / 8;
+    const sw = rect.width / 8;
+    const sh = rect.height / 8;
 
-    const x = rect.left + (col + 0.5) * squareWidth;
-    const y = rect.top  + (row + 0.5) * squareHeight;
-
-    const leftPct = (col / 8) * 100;
-    const topPct  = (row / 8) * 100;
-
-    return { x, y, leftPct, topPct, widthPct: 12.5, heightPct: 12.5 };
+    return {
+      x: rect.left + (col + 0.5) * sw,
+      y: rect.top  + (row + 0.5) * sh,
+      leftPct:   (col / 8) * 100,
+      topPct:    (row / 8) * 100,
+      widthPct:  12.5,
+      heightPct: 12.5,
+    };
   }
 
-  // Draw overlay highlights on Chess.com Board
+  // ── Overlay Renderer ──────────────────────────────────────────────────────
   function drawOverlay(fromSq, toSq, moveType = 'best', badgeText = '') {
     clearOverlay();
     if (!showOverlay) return;
@@ -241,40 +257,31 @@
     const container = document.createElement('div');
     container.id = 'ichess-overlay-container';
 
-    // Source Highlight
     const fromCoords = getSquareCoordinates(board, fromSq);
     if (fromCoords) {
-      const fromHighlight = document.createElement('div');
-      fromHighlight.className = 'ichess-highlight-box ichess-highlight-from';
-      fromHighlight.style.left   = `${fromCoords.leftPct}%`;
-      fromHighlight.style.top    = `${fromCoords.topPct}%`;
-      fromHighlight.style.width  = `${fromCoords.widthPct}%`;
-      fromHighlight.style.height = `${fromCoords.heightPct}%`;
-      container.appendChild(fromHighlight);
+      const el = document.createElement('div');
+      el.className = 'ichess-highlight-box ichess-highlight-from';
+      el.style.cssText = `left:${fromCoords.leftPct}%;top:${fromCoords.topPct}%;width:${fromCoords.widthPct}%;height:${fromCoords.heightPct}%`;
+      container.appendChild(el);
     }
 
-    // Target Highlight & Custom Badges
     const toCoords = getSquareCoordinates(board, toSq);
     if (toCoords) {
-      const toHighlight = document.createElement('div');
-      const highlightCls = moveType === 'brilliant'
+      const cls = moveType === 'brilliant'
         ? 'ichess-highlight-brilliant'
         : moveType === 'mistake'
           ? (mistakeSeverity === 'blunder' ? 'ichess-highlight-blunder' : 'ichess-highlight-mistake')
           : 'ichess-highlight-to';
 
-      toHighlight.className = `ichess-highlight-box ${highlightCls}`;
-      toHighlight.style.left   = `${toCoords.leftPct}%`;
-      toHighlight.style.top    = `${toCoords.topPct}%`;
-      toHighlight.style.width  = `${toCoords.widthPct}%`;
-      toHighlight.style.height = `${toCoords.heightPct}%`;
+      const el = document.createElement('div');
+      el.className = `ichess-highlight-box ${cls}`;
+      el.style.cssText = `left:${toCoords.leftPct}%;top:${toCoords.topPct}%;width:${toCoords.widthPct}%;height:${toCoords.heightPct}%`;
 
       const badge = document.createElement('div');
       badge.className = `ichess-move-badge ${moveType}`;
-      badge.innerText = badgeText || `${fromSq} ➔ ${toSq}`;
-      toHighlight.appendChild(badge);
-
-      container.appendChild(toHighlight);
+      badge.innerText = badgeText || `${fromSq}→${toSq}`;
+      el.appendChild(badge);
+      container.appendChild(el);
     }
 
     board.appendChild(container);
@@ -285,29 +292,31 @@
     if (el) el.remove();
   }
 
-  // Process Move Selection
+  // ── Move Selection ────────────────────────────────────────────────────────
   function processMoveSelection(defaultBestMove) {
     moveCounter++;
     let selectedMove = defaultBestMove;
-    let moveType = 'best';
-    let moveBadge = '';
+    let moveType     = 'best';
+    let moveBadge    = '';
 
     const isMistakeTurn = mistakeInterval > 0 && (moveCounter % mistakeInterval === 0);
 
     if (isMistakeTurn) {
-      const mistakeMove = selectMistakeMove(defaultBestMove);
-      if (mistakeMove) {
-        selectedMove = mistakeMove;
-        moveType = 'mistake';
-        moveBadge = mistakeSeverity === 'blunder' ? '?? Blunder' : mistakeSeverity === 'mistake' ? '? Mistake' : '?! Inaccuracy';
+      const mm = selectMistakeMove(defaultBestMove);
+      if (mm) {
+        selectedMove = mm;
+        moveType  = 'mistake';
+        moveBadge = mistakeSeverity === 'blunder' ? '?? Blunder'
+                  : mistakeSeverity === 'mistake'  ? '? Mistake'
+                  : '?! Inaccuracy';
       }
     } else if (brilliantHunter) {
       const fen = extractFen();
-      const brilliant = detectBrilliantSacrifice(fen, defaultBestMove);
-      if (brilliant.isSacrifice) {
-        selectedMove = brilliant.move;
-        moveType = 'brilliant';
-        moveBadge = '!! Brilliant';
+      const b   = detectBrilliantSacrifice(fen, defaultBestMove);
+      if (b.isSacrifice) {
+        selectedMove = b.move;
+        moveType     = 'brilliant';
+        moveBadge    = '!! Brilliant';
       }
     }
 
@@ -321,160 +330,147 @@
     }
   }
 
-  // Exact Brilliant Hunter Algorithm
+  // ── Brilliant Hunter ──────────────────────────────────────────────────────
   function detectBrilliantSacrifice(fen, defaultBest) {
-    const validItems = mpvList.filter(item => item && item.move && item.move.length >= 4);
-    if (validItems.length === 0) return { move: defaultBest, isSacrifice: false };
+    const valid = mpvList.filter(i => i && i.move && i.move.length >= 4);
+    if (valid.length === 0) return { move: defaultBest, isSacrifice: false };
 
-    const topCp = validItems[0].cp;
+    const topCp = valid[0].cp;
     if (topCp < -100) return { move: defaultBest, isSacrifice: false };
-
-    const MAX_CP_DELTA = 60;
-    const MIN_CP_AFTER = -80;
 
     let game = null;
     if (ChessCtor && fen) {
       try { game = new ChessCtor(fen); } catch { game = null; }
     }
 
-    for (const item of validItems) {
-      const cpDelta = topCp - item.cp;
-      if (cpDelta > MAX_CP_DELTA) continue;
-      if (item.cp < MIN_CP_AFTER) continue;
+    for (const item of valid) {
+      if (topCp - item.cp > 60)  continue;
+      if (item.cp < -80)         continue;
 
       const uci  = item.move;
       const from = uci.substring(0, 2);
       const to   = uci.substring(2, 4);
 
-      if (game) {
-        const piece = game.get(from);
-        if (!piece || piece.type === 'k' || piece.type === 'p') continue;
+      if (!game) continue;
 
-        const attackerVal = PIECE_VALUES[piece.type] || 0;
-        const targetPiece = game.get(to);
-        const targetVal   = targetPiece ? (PIECE_VALUES[targetPiece.type] || 0) : 0;
+      const piece = game.get(from);
+      if (!piece || piece.type === 'k' || piece.type === 'p') continue;
 
-        if (targetPiece && targetPiece.color !== piece.color && (attackerVal - targetVal >= 2)) {
-          return { move: uci, isSacrifice: true };
-        }
+      const aVal = PIECE_VALUES[piece.type] || 0;
+      const tPc  = game.get(to);
+      const tVal = tPc ? (PIECE_VALUES[tPc.type] || 0) : 0;
 
-        if (!targetPiece) {
-          try {
-            const clone = new ChessCtor(game.fen());
-            const res = clone.move({ from, to, promotion: uci[4] ?? 'q' });
-            if (res) {
-              const oppMoves = clone.moves({ verbose: true });
-              const canRecaptureCheaply = oppMoves.some(
-                om => om.to === to && (PIECE_VALUES[om.piece] || 0) < attackerVal,
-              );
-              if (canRecaptureCheaply) {
-                return { move: uci, isSacrifice: true };
-              }
-            }
-          } catch { /* ignore */ }
-        }
+      if (tPc && tPc.color !== piece.color && (aVal - tVal >= 2)) {
+        return { move: uci, isSacrifice: true };
+      }
+
+      if (!tPc) {
+        try {
+          const clone = new ChessCtor(game.fen());
+          if (clone.move({ from, to, promotion: uci[4] ?? 'q' })) {
+            const cheapRecap = clone.moves({ verbose: true }).some(
+              om => om.to === to && (PIECE_VALUES[om.piece] || 0) < aVal
+            );
+            if (cheapRecap) return { move: uci, isSacrifice: true };
+          }
+        } catch { /* ignore */ }
       }
     }
 
     return { move: defaultBest, isSacrifice: false };
   }
 
-  // Select a suboptimal move for the Mistake Generator
+  // ── Mistake Selector ──────────────────────────────────────────────────────
   function selectMistakeMove(defaultBest) {
-    const validItems = mpvList.filter(item => item && item.move && item.move.length >= 4);
-    if (validItems.length <= 1) return defaultBest;
+    const valid = mpvList.filter(i => i && i.move && i.move.length >= 4);
+    if (valid.length <= 1) return defaultBest;
 
-    const topCp = validItems[0].cp;
-    const targetLoss = mistakeSeverity === 'blunder' ? 450 : mistakeSeverity === 'mistake' ? 250 : 120;
+    const topCp  = valid[0].cp;
+    const target = mistakeSeverity === 'blunder' ? 450
+                 : mistakeSeverity === 'mistake'  ? 250
+                 : 120;
 
-    for (let i = 1; i < validItems.length; i++) {
-      const item = validItems[i];
-      const loss = topCp - item.cp;
-      if (loss >= targetLoss - 100) {
-        return item.move;
-      }
+    for (let i = 1; i < valid.length; i++) {
+      if (topCp - valid[i].cp >= target - 100) return valid[i].move;
     }
 
-    return validItems[1]?.move || defaultBest;
+    return valid[1]?.move || defaultBest;
   }
 
-  // Dual Execution: Try Direct React Game Move + Math-based Pointer Event Fallback
+  // ── Auto-Play — BUG#3 fix: safety reset on isExecutingMove ───────────────
   function autoPlayMove(fromSq, toSq) {
     const board = document.querySelector('wc-chess-board, chess-board, .board');
     if (!board) return;
 
     isExecutingMove = true;
 
-    const reactKey = Object.keys(board).find(k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$'));
+    // Safety: always release the lock after max 3 seconds
+    const safetyTimer = setTimeout(() => { isExecutingMove = false; }, 3000);
+
+    // Method A: Direct React internal game object
+    const reactKey = Object.keys(board).find(
+      k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$')
+    );
     if (reactKey && board[reactKey]) {
-      const findGameObj = (obj, depth = 0) => {
-        if (!obj || depth > 4) return null;
-        if (typeof obj.move === 'function' || typeof obj.userMove === 'function' || typeof obj.makeMove === 'function') return obj;
+      const findGameObj = (obj, d = 0) => {
+        if (!obj || d > 4) return null;
+        if (typeof obj.userMove === 'function' || typeof obj.move === 'function' || typeof obj.makeMove === 'function') return obj;
         for (const key of ['game', 'props', 'children', 'memoizedProps']) {
-          if (obj[key]) {
-            const res = findGameObj(obj[key], depth + 1);
-            if (res) return res;
-          }
+          if (obj[key]) { const r = findGameObj(obj[key], d + 1); if (r) return r; }
         }
         return null;
       };
 
-      const gameObj = findGameObj(board[reactKey]);
-      if (gameObj) {
+      const gObj = findGameObj(board[reactKey]);
+      if (gObj) {
         try {
-          if (typeof gameObj.userMove === 'function') {
-            gameObj.userMove(fromSq + toSq);
+          if (typeof gObj.userMove === 'function') {
+            gObj.userMove(fromSq + toSq);
+            clearTimeout(safetyTimer);
             isExecutingMove = false;
             return;
-          } else if (typeof gameObj.move === 'function') {
-            gameObj.move({ from: fromSq, to: toSq, promotion: 'q' });
+          } else if (typeof gObj.move === 'function') {
+            gObj.move({ from: fromSq, to: toSq, promotion: 'q' });
+            clearTimeout(safetyTimer);
             isExecutingMove = false;
             return;
           }
-        } catch { /* fallback to pointer */ }
+        } catch { /* fallback */ }
       }
     }
 
-    const fromCoords = getSquareCoordinates(board, fromSq);
-    const toCoords   = getSquareCoordinates(board, toSq);
+    // Method B: Pointer Event coordinate click
+    const fromC = getSquareCoordinates(board, fromSq);
+    const toC   = getSquareCoordinates(board, toSq);
 
-    if (!fromCoords || !toCoords) {
+    if (!fromC || !toC) {
+      clearTimeout(safetyTimer);
       isExecutingMove = false;
       return;
     }
 
     const delay = Math.floor(Math.random() * 350) + 400;
-
     setTimeout(() => {
-      dispatchClickAtCoords(fromCoords.x, fromCoords.y);
+      dispatchClickAtCoords(fromC.x, fromC.y);
       setTimeout(() => {
-        dispatchClickAtCoords(toCoords.x, toCoords.y);
+        dispatchClickAtCoords(toC.x, toC.y);
+        clearTimeout(safetyTimer);
         isExecutingMove = false;
       }, 150);
     }, delay);
   }
 
   function dispatchClickAtCoords(x, y) {
-    const el = document.elementFromPoint(x, y) || document.body;
-
-    const opts = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: x,
-      clientY: y,
-      button: 0,
-      pointerId: 1,
-      isPrimary: true
-    };
-
+    const el   = document.elementFromPoint(x, y) || document.body;
+    const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true };
     el.dispatchEvent(new PointerEvent('pointerdown', opts));
-    el.dispatchEvent(new MouseEvent('mousedown', opts));
-    el.dispatchEvent(new PointerEvent('pointerup', opts));
-    el.dispatchEvent(new MouseEvent('mouseup', opts));
-    el.dispatchEvent(new MouseEvent('click', opts));
+    el.dispatchEvent(new MouseEvent('mousedown',    opts));
+    el.dispatchEvent(new PointerEvent('pointerup',  opts));
+    el.dispatchEvent(new MouseEvent('mouseup',      opts));
+    el.dispatchEvent(new MouseEvent('click',        opts));
   }
 
+  // ── Main Scan Loop ────────────────────────────────────────────────────────
   function scanBoard() {
     if (!isContextValid()) {
       cleanupOnInvalidatedContext();
@@ -482,18 +478,28 @@
     }
 
     initWorker();
-    updateHudStatus();
+    updateHudStatus(); // BUG#1: no-ops unless hudNeedsUpdate = true
+
+    if (!stockfishWorker) return;
 
     const fen = extractFen();
-    if (fen && fen !== lastEvaluatedFen && !isEvaluating) {
-      lastEvaluatedFen = fen;
-      isEvaluating = true;
-      mpvList = [];
-      if (stockfishWorker) {
-        stockfishWorker.postMessage(`position fen ${fen}`);
-        stockfishWorker.postMessage(`go depth ${targetDepth}`);
-      }
+    if (!fen || fen === lastEvaluatedFen || isEvaluating) return;
+
+    // BUG#2: detect new game by checking if starting FEN root changed (piece placement part)
+    const fenRoot = fen.split(' ')[0]; // piece placement only, ignore move counter
+    if (lastGameFenRoot && fenRoot !== lastGameFenRoot && fen.includes('rnbqkbnr/pppppppp')) {
+      // New game started — reset move counter
+      moveCounter = 0;
+      console.log('[iChess Engine] New game detected, move counter reset');
     }
+    lastGameFenRoot = fenRoot;
+
+    lastEvaluatedFen = fen;
+    isEvaluating     = true;
+    mpvList          = [];
+
+    stockfishWorker.postMessage(`position fen ${fen}`);
+    stockfishWorker.postMessage(`go depth ${targetDepth}`);
   }
 
   scanIntervalId = setInterval(scanBoard, 600);
