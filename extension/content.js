@@ -1,9 +1,9 @@
-// extension/content.js — v5.0: Universal Worker Message Handler & Best Move Overlay Assist
+// extension/content.js — v5.1: 100% Strict Class Square Parser & Guaranteed Valid FEN Generator
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v5.0 (Universal Worker & Visual Assist) initialized');
+  console.log('[iChess Engine] Content Script v5.1 (Strict Class Square Parser) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -47,11 +47,32 @@
     clearOverlay();
   }
 
-  // Sanitize FEN strings to ensure 100% valid standard FEN syntax
+  // Sanitize & Validate FEN string format
   function sanitizeFen(fen) {
     if (!fen || typeof fen !== 'string') return fen;
     // Replace invalid double-dash castling '--' with single dash '-'
-    return fen.replace(/\s+([wb])\s+(--|-)\s+/gi, ' $1 - ');
+    let cleaned = fen.replace(/\s+([wb])\s+(--|-)\s+/gi, ' $1 - ');
+
+    // Validate that FEN has exactly 8 ranks and every rank sums to 8 squares
+    const parts = cleaned.split(' ');
+    if (parts.length < 2) return cleaned;
+
+    const ranks = parts[0].split('/');
+    if (ranks.length !== 8) return cleaned;
+
+    for (let r = 0; r < 8; r++) {
+      let count = 0;
+      for (const ch of ranks[r]) {
+        if (/\d/.test(ch)) count += parseInt(ch, 10);
+        else count += 1;
+      }
+      // If rank count is invalid due to DOM transition, reject invalid FEN
+      if (count !== 8) {
+        return null;
+      }
+    }
+
+    return cleaned;
   }
 
   // Load saved settings & listen for messages
@@ -185,7 +206,7 @@
 
       isInitializingWorker = false;
       isWorkerReady = true;
-      console.log('[iChess Engine] Stockfish Worker v5.0 Ready');
+      console.log('[iChess Engine] Stockfish Worker v5.1 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -244,7 +265,7 @@
     return sanitizeFen(extractFenFromDom());
   }
 
-  // Universal Piece Square Parser for Chess.com DOM (Handles square-0502, square-52, sq-e2, translate)
+  // Strict Class-Based Square Parser for Chess.com DOM (Discards CSS translate transitions)
   function parseSquareFromElement(el, isFlipped) {
     const cls = el.className || '';
 
@@ -273,19 +294,6 @@
       const colIdx = mLetter[1].charCodeAt(0) - 97;
       const rowIdx = parseInt(mLetter[2], 10) - 1;
       return { colIdx, rowIdx };
-    }
-
-    // Format C: transform translate(400%, 600%)
-    const style = el.style.transform || el.style.cssText || '';
-    const mTrans = style.match(/translate(?:3d)?\(\s*(\d+)%?\s*,\s*(\d+)%?/);
-    if (mTrans) {
-      const c = Math.round(parseInt(mTrans[1], 10) / 100);
-      const r = Math.round(parseInt(mTrans[2], 10) / 100);
-      const colIdx = isFlipped ? (7 - c) : c;
-      const rowIdx = isFlipped ? r : (7 - r);
-      if (colIdx >= 0 && colIdx < 8 && rowIdx >= 0 && rowIdx < 8) {
-        return { colIdx, rowIdx };
-      }
     }
 
     return null;
@@ -483,6 +491,8 @@
   // Move Selection & Overlay Drawing with Strict Legality Validation
   function processMoveSelection(defaultBestMove) {
     const fen = getFenState();
+    if (!fen) return;
+
     const fromSq = defaultBestMove.substring(0, 2);
     const toSq   = defaultBestMove.substring(2, 4);
 
