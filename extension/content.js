@@ -1,28 +1,29 @@
-// extension/content.js — v2.0: Scraped-DOM Precision Engine (Matched to Live Chess.com wc-chess-board)
+// extension/content.js — v2.1: Blob Worker Security Fix & Scraped-DOM Precision Engine
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v2.0 (Live Scraped-DOM Engine) loaded on Chess.com');
+  console.log('[iChess Engine] Content Script v2.1 (Blob Worker Security Fix) loaded on Chess.com');
 
   const ChessCtor = window.Chess || (typeof Chess !== 'undefined' ? Chess : null);
 
-  let showOverlay     = true;
-  let autoPlayEnabled = false;
-  let brilliantHunter = false;
-  let targetDepth     = 12;
-  let mistakeInterval = 0;
-  let mistakeSeverity = 'mistake';
+  let showOverlay          = true;
+  let autoPlayEnabled      = false;
+  let brilliantHunter      = false;
+  let targetDepth          = 12;
+  let mistakeInterval      = 0;
+  let mistakeSeverity      = 'mistake';
 
-  let stockfishWorker  = null;
-  let lastEvaluatedFen = '';
-  let isEvaluating     = false;
-  let moveCounter      = 0;
-  let mpvList          = [];
-  let isExecutingMove  = false;
-  let scanIntervalId   = null;
-  let lastGameFenRoot  = '';
-  let hudNeedsUpdate   = true;
+  let stockfishWorker      = null;
+  let isInitializingWorker = false;
+  let lastEvaluatedFen     = '';
+  let isEvaluating         = false;
+  let moveCounter          = 0;
+  let mpvList              = [];
+  let isExecutingMove      = false;
+  let scanIntervalId       = null;
+  let lastGameFenRoot      = '';
+  let hudNeedsUpdate       = true;
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -98,17 +99,25 @@
     }
   }
 
-  // Stockfish Worker initialization
-  function initWorker() {
-    if (stockfishWorker) return;
+  // Stockfish Blob Worker (Fixes Chrome Cross-Origin Worker Security Error)
+  async function initWorker() {
+    if (stockfishWorker || isInitializingWorker) return;
     if (!isContextValid()) {
       cleanupOnInvalidatedContext();
       return;
     }
 
+    isInitializingWorker = true;
+
     try {
       const workerUrl = chrome.runtime.getURL('stockfish.js');
-      stockfishWorker = new Worker(workerUrl);
+      const response = await fetch(workerUrl);
+      const scriptText = await response.text();
+
+      const blob = new Blob([scriptText], { type: 'application/javascript' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      stockfishWorker = new Worker(blobUrl);
 
       stockfishWorker.onmessage = (e) => {
         const line = typeof e.data === 'string' ? e.data : e.data.toString();
@@ -136,8 +145,10 @@
         `setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`
       );
       stockfishWorker.postMessage('isready');
-      console.log('[iChess Engine] Stockfish Worker v2.0 Ready');
+      isInitializingWorker = false;
+      console.log('[iChess Engine] Stockfish Blob Worker v2.1 Ready');
     } catch (err) {
+      isInitializingWorker = false;
       isEvaluating = false;
       if (err.message && err.message.includes('invalidated')) {
         cleanupOnInvalidatedContext();
@@ -192,20 +203,17 @@
     return document.querySelector('wc-chess-board, chess-board, .board');
   }
 
-  // 100% SCRAPED DOM FEN EXTRACTOR (Based on Live Chess.com wc-chess-board structure)
+  // 100% SCRAPED DOM FEN EXTRACTOR
   function extractFenFromDom() {
     const board = getBoardElement();
     if (!board) return null;
 
-    // Strategy 1: Native Web Component JS API
     if (board.game) {
       if (typeof board.game.getFen === 'function') return board.game.getFen();
       if (typeof board.game.fen === 'string') return board.game.fen;
       if (typeof board.game.getFEN === 'function') return board.game.getFEN();
     }
 
-    // Strategy 2: Direct Scraped DOM Piece Tree Parsing
-    // Scraped pattern: <div class="piece wp square-52"></div> (Column 5 = e, Row 2 = 2)
     const pieces = board.querySelectorAll('.piece');
     if (!pieces || pieces.length === 0) return null;
 
@@ -214,22 +222,20 @@
     pieces.forEach(el => {
       const cls = el.className;
       let pieceChar = null;
-      let colIdx = -1; // 0..7 for col a..h
-      let rowIdx = -1; // 0..7 for row 1..8
+      let colIdx = -1;
+      let rowIdx = -1;
 
-      // Match square class: square-52 or square-e2 or sq-e2
       const sqMatch = cls.match(/square-(\d)(\d)/) || cls.match(/sq-([a-h])([1-8])/) || cls.match(/square-([a-h])([1-8])/);
       if (sqMatch) {
         if (/^\d$/.test(sqMatch[1])) {
-          colIdx = parseInt(sqMatch[1], 10) - 1; // 1-based to 0-based
-          rowIdx = parseInt(sqMatch[2], 10) - 1; // 1-based to 0-based
+          colIdx = parseInt(sqMatch[1], 10) - 1;
+          rowIdx = parseInt(sqMatch[2], 10) - 1;
         } else {
           colIdx = sqMatch[1].charCodeAt(0) - 97;
           rowIdx = parseInt(sqMatch[2], 10) - 1;
         }
       }
 
-      // Match piece color and type: wp, bp, wn, bn, wb, bb, wr, br, wq, bq, wk, bk
       const pMatch = cls.match(/\b([wb])([pnbrqk])\b/i);
       if (pMatch) {
         const color = pMatch[1].toLowerCase();
@@ -242,7 +248,6 @@
       }
     });
 
-    // Construct 8 ranks of FEN
     let fenRows = [];
     for (let r = 0; r < 8; r++) {
       let rowStr = '';
@@ -263,7 +268,6 @@
       fenRows.push(rowStr);
     }
 
-    // Determine Active Turn from Scraped DOM Move List
     let activeTurn = 'w';
     const moveNodes = document.querySelectorAll(
       '.white-moveNode, .black-moveNode, .move-node, [data-ply], .move-row .node'
@@ -285,8 +289,8 @@
     if (!sq || sq.length < 2) return null;
 
     const rect    = board.getBoundingClientRect();
-    const fileIdx = sq.charCodeAt(0) - 97; // 'a' -> 0, 'h' -> 7
-    const rankNum = parseInt(sq[1], 10);   // 1..8
+    const fileIdx = sq.charCodeAt(0) - 97;
+    const rankNum = parseInt(sq[1], 10);
 
     const isFlipped = board.classList.contains('flipped') ||
                       board.getAttribute('facing') === 'b' ||
@@ -305,8 +309,8 @@
       topPct:    (row / 8) * 100,
       widthPct:  12.5,
       heightPct: 12.5,
-      colNumber: fileIdx + 1, // 1..8
-      rowNumber: rankNum,     // 1..8
+      colNumber: fileIdx + 1,
+      rowNumber: rankNum,
     };
   }
 
@@ -318,7 +322,6 @@
     const board = getBoardElement();
     if (!board) return;
 
-    // Anchor overlay positioning context inside board component
     if (window.getComputedStyle(board).position === 'static') {
       board.style.position = 'relative';
     }
@@ -335,7 +338,7 @@
       container.appendChild(el);
     }
 
-    // Target Highlight & Badges (Green / Red / Orange)
+    // Target Highlight & Badges
     const toCoords = getSquareCoordinates(board, toSq);
     if (toCoords) {
       const cls = moveType === 'brilliant'
@@ -468,7 +471,7 @@
     return valid[1]?.move || defaultBest;
   }
 
-  // Live Auto-Play Dispatcher (Targets exact Scraped DOM piece classes .square-52)
+  // Live Auto-Play Dispatcher
   function autoPlayMove(fromSq, toSq) {
     const board = getBoardElement();
     if (!board) return;
@@ -485,7 +488,6 @@
       return;
     }
 
-    // Method A: Direct JS API call if available on wc-chess-board
     if (board.game && typeof board.game.makeMove === 'function') {
       try {
         board.game.makeMove(fromSq + toSq);
@@ -495,8 +497,6 @@
       } catch { /* fallback */ }
     }
 
-    // Method B: Precise Scraped DOM Element Click Sequence
-    // Target scraped format: .piece.square-52 (col 5 = e, row 2 = 2)
     const sourceEl = board.querySelector(`.piece.square-${fromC.colNumber}${fromC.rowNumber}, .square-${fromC.colNumber}${fromC.rowNumber}, .sq-${fromSq}`) ||
                      document.elementFromPoint(fromC.x, fromC.y);
 
@@ -506,10 +506,8 @@
     const delay = Math.floor(Math.random() * 300) + 350;
 
     setTimeout(() => {
-      // Step 1: Click source piece
       dispatchEventsOn(sourceEl || document.elementFromPoint(fromC.x, fromC.y), fromC.x, fromC.y);
 
-      // Step 2: Click target square
       setTimeout(() => {
         dispatchEventsOn(targetEl || document.elementFromPoint(toC.x, toC.y), toC.x, toC.y);
         clearTimeout(safetyTimer);
