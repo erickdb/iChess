@@ -8,14 +8,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mistakeInterval  = document.getElementById('mistakeInterval');
   const mistakeSeverity  = document.getElementById('mistakeSeverity');
 
-  // Load saved settings
+  const btnStartAi       = document.getElementById('btnStartAi');
+  const btnResetGame     = document.getElementById('btnResetGame');
+
+  // Load saved settings with updated defaults matching the user preference
   const settings = await chrome.storage.local.get({
     showOverlay: true,
-    autoPlay: false,
-    brilliantHunter: false,
-    depth: 12,
-    mistakeInterval: 0,
-    mistakeSeverity: 'mistake'
+    autoPlay: true,
+    brilliantHunter: true,
+    depth: 6,
+    mistakeInterval: 5,
+    mistakeSeverity: 'inaccuracy'
   });
 
   toggleOverlay.checked   = settings.showOverlay;
@@ -24,6 +27,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   depthSelect.value       = String(settings.depth);
   mistakeInterval.value   = String(settings.mistakeInterval);
   mistakeSeverity.value   = settings.mistakeSeverity;
+
+  function sendTabMessage(msg) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, msg).catch(() => {});
+      }
+    });
+  }
 
   function syncSettings() {
     const config = {
@@ -36,13 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     chrome.storage.local.set(config);
-
-    // Notify active tab on Chess.com
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'ICHESS_SETTINGS_UPDATE', config }).catch(() => {});
-      }
-    });
+    sendTabMessage({ type: 'ICHESS_SETTINGS_UPDATE', config });
   }
 
   toggleOverlay.addEventListener('change', syncSettings);
@@ -51,4 +56,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   depthSelect.addEventListener('change', syncSettings);
   mistakeInterval.addEventListener('change', syncSettings);
   mistakeSeverity.addEventListener('change', syncSettings);
+
+  // Action Buttons
+  if (btnStartAi) {
+    btnStartAi.addEventListener('click', () => {
+      sendTabMessage({ type: 'ICHESS_START_AI' });
+      // Visual feedback button press effect
+      btnStartAi.innerText = '⚡ AI Active!';
+      setTimeout(() => { btnStartAi.innerText = '▶️ Start AI'; }, 1500);
+    });
+  }
+
+  if (btnResetGame) {
+    btnResetGame.addEventListener('click', () => {
+      sendTabMessage({ type: 'ICHESS_RESET_GAME' });
+      btnResetGame.innerText = '✅ Reset Done';
+      setTimeout(() => { btnResetGame.innerText = '🔄 Reset Game'; }, 1500);
+    });
+  }
 });

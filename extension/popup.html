@@ -6,7 +6,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 270px;
+      width: 280px;
       padding: 16px;
       background: #07090f;
       color: #f1f5f9;
@@ -35,6 +35,42 @@
       font-weight: 800;
       padding: 2px 6px;
       border-radius: 4px;
+    }
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .btn {
+      flex: 1;
+      padding: 8px 10px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .btn-start {
+      background: #00adb5;
+      color: #ffffff;
+      box-shadow: 0 0 12px rgba(0, 173, 181, 0.4);
+    }
+    .btn-start:hover {
+      background: #00868d;
+    }
+    .btn-reset {
+      background: #1e293b;
+      color: #cbd5e1;
+      border: 1px solid #334155;
+    }
+    .btn-reset:hover {
+      background: #334155;
+      color: #ffffff;
     }
     .section {
       display: flex;
@@ -110,7 +146,13 @@
 <body>
   <div class="header">
     <div class="title">i<span>Chess</span> Control</div>
-    <div class="badge">PRO v1.6</div>
+    <div class="badge">PRO v3.0</div>
+  </div>
+
+  <!-- Action Buttons: Start AI & Reset Game -->
+  <div class="action-buttons">
+    <button id="btnStartAi" class="btn btn-start">▶️ Start AI</button>
+    <button id="btnResetGame" class="btn btn-reset">🔄 Reset Game</button>
   </div>
 
   <div class="section">
@@ -126,7 +168,7 @@
     <div class="row">
       <span class="label">Auto-Play Moves</span>
       <label class="switch">
-        <input type="checkbox" id="toggleAutoPlay">
+        <input type="checkbox" id="toggleAutoPlay" checked>
         <span class="slider"></span>
       </label>
     </div>
@@ -138,7 +180,7 @@
         <div style="font-size: 10px; color: #94a3b8;">Hunts for piece sacrifices (!!)</div>
       </div>
       <label class="switch">
-        <input type="checkbox" id="toggleBrilliant" class="brilliant-switch">
+        <input type="checkbox" id="toggleBrilliant" class="brilliant-switch" checked>
         <span class="slider"></span>
       </label>
     </div>
@@ -147,9 +189,9 @@
     <div>
       <div class="label-title">Calculated Depth (Strength)</div>
       <select id="depthSelect">
-        <option value="6">Depth 6 — Beginner (~1350 ELO)</option>
+        <option value="6" selected>Depth 6 — Beginner (~1350 ELO)</option>
         <option value="10">Depth 10 — Candidate Master (~1850 ELO)</option>
-        <option value="12" selected>Depth 12 — Expert (~2100 ELO)</option>
+        <option value="12">Depth 12 — Expert (~2100 ELO)</option>
         <option value="16">Depth 16 — Grandmaster (~2700 ELO)</option>
         <option value="20">Depth 20 — Engine God (~3200 ELO)</option>
         <option value="24">Depth 24 — Maximum Depth (~3500 ELO)</option>
@@ -160,9 +202,9 @@
     <div>
       <div class="label-title">Mistake Generator (Human-Like)</div>
       <select id="mistakeInterval">
-        <option value="0" selected>Disabled (Play 100% Best Moves)</option>
+        <option value="0">Disabled (Play 100% Best Moves)</option>
         <option value="3">Make Mistake Every 3 Moves</option>
-        <option value="5">Make Mistake Every 5 Moves (Recommended)</option>
+        <option value="5" selected>Make Mistake Every 5 Moves (Recommended)</option>
         <option value="7">Make Mistake Every 7 Moves</option>
         <option value="10">Make Mistake Every 10 Moves</option>
       </select>
@@ -172,8 +214,8 @@
     <div>
       <div class="label-title">Mistake Type / Severity</div>
       <select id="mistakeSeverity">
-        <option value="inaccuracy">Inaccuracy (~ -100 CP)</option>
-        <option value="mistake" selected>Mistake (~ -250 CP)</option>
+        <option value="inaccuracy" selected>Inaccuracy (~ -100 CP)</option>
+        <option value="mistake">Mistake (~ -250 CP)</option>
         <option value="blunder">Blunder (~ -500 CP)</option>
       </select>
     </div>

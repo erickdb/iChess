@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "iChess Assistant & Auto-Player",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "description": "Real-time Stockfish engine overlay & assist for Chess.com",
   "permissions": [
     "activeTab",
