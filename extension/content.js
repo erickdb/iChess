@@ -1,9 +1,9 @@
-// extension/content.js — v3.2: 100% Pure Scraped DOM FEN Engine with Precision Auto-Player
+// extension/content.js — v3.3: Universal DOM Scraper & Precision Auto-Player Engine
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v3.2 (Pure DOM Scraper & Precision Auto-Player) initialized');
+  console.log('[iChess Engine] Content Script v3.3 Universal Scraper & Auto-Player initialized');
 
   let showOverlay          = true;
   let autoPlayEnabled      = true;
@@ -136,7 +136,7 @@
           const currentFen = extractFenFromDom();
           isEvaluating = false;
 
-          // Discard stale move if board state changed during Stockfish execution
+          // Discard stale bestmove if position changed during Stockfish search
           if (currentFen && currentFen !== evaluatingFen) {
             console.log('[iChess Engine] Discarding stale bestmove (board position changed)');
             clearOverlay();
@@ -163,7 +163,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v3.2 Ready');
+      console.log('[iChess Engine] Stockfish Worker v3.3 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -219,6 +219,53 @@
     return document.querySelector('wc-chess-board, chess-board, .board');
   }
 
+  // Universal Piece Square Parser for Chess.com DOM (Handles square-0502, square-52, sq-e2, translate)
+  function parseSquareFromElement(el, isFlipped) {
+    const cls = el.className || '';
+
+    // Format A: square-0502 or square-52 (digits)
+    const mDigits = cls.match(/square-(\d{2,4})/);
+    if (mDigits) {
+      const digits = mDigits[1];
+      let colIdx = -1, rowIdx = -1;
+      if (digits.length === 4) {
+        // e.g. square-0502 -> file 5 (e), rank 2
+        colIdx = parseInt(digits.substring(0, 2), 10) - 1;
+        rowIdx = parseInt(digits.substring(2, 4), 10) - 1;
+      } else if (digits.length === 2) {
+        // e.g. square-52 -> file 5 (e), rank 2
+        colIdx = parseInt(digits[0], 10) - 1;
+        rowIdx = parseInt(digits[1], 10) - 1;
+      }
+      if (colIdx >= 0 && colIdx < 8 && rowIdx >= 0 && rowIdx < 8) {
+        return { colIdx, rowIdx };
+      }
+    }
+
+    // Format B: sq-e2 or square-e2 (letters)
+    const mLetter = cls.match(/(?:square|sq)-([a-h])([1-8])/);
+    if (mLetter) {
+      const colIdx = mLetter[1].charCodeAt(0) - 97;
+      const rowIdx = parseInt(mLetter[2], 10) - 1;
+      return { colIdx, rowIdx };
+    }
+
+    // Format C: transform translate(400%, 600%)
+    const style = el.style.transform || el.style.cssText || '';
+    const mTrans = style.match(/translate(?:3d)?\(\s*(\d+)%?\s*,\s*(\d+)%?/);
+    if (mTrans) {
+      const c = Math.round(parseInt(mTrans[1], 10) / 100);
+      const r = Math.round(parseInt(mTrans[2], 10) / 100);
+      const colIdx = isFlipped ? (7 - c) : c;
+      const rowIdx = isFlipped ? r : (7 - r);
+      if (colIdx >= 0 && colIdx < 8 && rowIdx >= 0 && rowIdx < 8) {
+        return { colIdx, rowIdx };
+      }
+    }
+
+    return null;
+  }
+
   // Multi-layer Active Turn Detector
   function detectActiveTurn(board) {
     // 1. Check Clock Turn Indicators
@@ -231,14 +278,9 @@
     const highlights = board.querySelectorAll('.highlight, [class*="highlight-"]');
     if (highlights && highlights.length >= 2) {
       for (const hl of highlights) {
-        const sqMatch = hl.className.match(/square-(\d)(\d)|sq-([a-h])([1-8])|square-([a-h])([1-8])/);
-        if (sqMatch) {
-          let sqSel = '';
-          if (/^\d$/.test(sqMatch[1])) {
-            sqSel = `.square-${sqMatch[1]}${sqMatch[2]}`;
-          } else {
-            sqSel = `.sq-${sqMatch[1]}${sqMatch[2]}, .square-${sqMatch[1]}${sqMatch[2]}`;
-          }
+        const parsed = parseSquareFromElement(hl, false);
+        if (parsed) {
+          const sqSel = `.square-${parsed.colIdx + 1}${parsed.rowIdx + 1}, .square-0${parsed.colIdx + 1}0${parsed.rowIdx + 1}`;
           const piece = board.querySelector(`.piece${sqSel}, ${sqSel} .piece`);
           if (piece) {
             const pClass = piece.className;
@@ -263,7 +305,7 @@
     return isFlipped ? 'b' : 'w';
   }
 
-  // 100% PURE SCRAPED DOM FEN EXTRACTOR
+  // 100% UNIVERSAL SCRAPED DOM FEN EXTRACTOR
   function extractFenFromDom() {
     const board = getBoardElement();
     if (!board) return null;
@@ -271,44 +313,18 @@
     const pieces = board.querySelectorAll('.piece');
     if (!pieces || pieces.length === 0) return null;
 
+    const isFlipped = board.classList.contains('flipped') ||
+                      board.getAttribute('facing') === 'b' ||
+                      board.getAttribute('orientation') === 'black';
+
     const grid = Array(8).fill(null).map(() => Array(8).fill(null));
 
     pieces.forEach(el => {
-      const cls = el.className;
+      const cls = el.className || '';
+      const sq = parseSquareFromElement(el, isFlipped);
+      if (!sq) return;
+
       let pieceChar = null;
-      let colIdx = -1;
-      let rowIdx = -1;
-
-      // 1. Try class matching: square-11..square-88 or sq-e3 or square-e3
-      const sqMatch = cls.match(/square-(\d)(\d)/) || cls.match(/sq-([a-h])([1-8])/) || cls.match(/square-([a-h])([1-8])/);
-      if (sqMatch) {
-        if (/^\d$/.test(sqMatch[1])) {
-          colIdx = parseInt(sqMatch[1], 10) - 1;
-          rowIdx = parseInt(sqMatch[2], 10) - 1;
-        } else {
-          colIdx = sqMatch[1].charCodeAt(0) - 97;
-          rowIdx = parseInt(sqMatch[2], 10) - 1;
-        }
-      } else {
-        // 2. Fallback to style transform matching: e.g. transform: translate(300%, 400%)
-        const style = el.style.transform || el.style.cssText;
-        const transMatch = style.match(/translate\(\s*(\d+)%?\s*,\s*(\d+)%?\s*\)/);
-        if (transMatch) {
-          const fx = parseInt(transMatch[1], 10);
-          const fy = parseInt(transMatch[2], 10);
-          const c = Math.round(fx / 100);
-          const r = Math.round(fy / 100);
-
-          const isFlipped = board.classList.contains('flipped') ||
-                            board.getAttribute('facing') === 'b' ||
-                            board.getAttribute('orientation') === 'black';
-
-          colIdx = isFlipped ? (7 - c) : c;
-          rowIdx = isFlipped ? r : (7 - r);
-        }
-      }
-
-      // Piece type matching
       const pMatch = cls.match(/\b([wb])([pnbrqk])\b/i);
       if (pMatch) {
         const color = pMatch[1].toLowerCase();
@@ -316,8 +332,8 @@
         pieceChar = color === 'w' ? type.toUpperCase() : type.toLowerCase();
       }
 
-      if (colIdx >= 0 && colIdx < 8 && rowIdx >= 0 && rowIdx < 8 && pieceChar) {
-        grid[7 - rowIdx][colIdx] = pieceChar;
+      if (pieceChar && sq.colIdx >= 0 && sq.colIdx < 8 && sq.rowIdx >= 0 && sq.rowIdx < 8) {
+        grid[7 - sq.rowIdx][sq.colIdx] = pieceChar;
       }
     });
 
