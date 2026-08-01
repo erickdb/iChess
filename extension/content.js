@@ -1,9 +1,9 @@
-// extension/content.js — v5.1: 100% Strict Class Square Parser & Guaranteed Valid FEN Generator
+// extension/content.js — v5.2: Direct Extension Worker & Guaranteed Best Move Overlay Assist
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v5.1 (Strict Class Square Parser) initialized');
+  console.log('[iChess Engine] Content Script v5.2 (Direct Extension Worker Engine) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -50,10 +50,8 @@
   // Sanitize & Validate FEN string format
   function sanitizeFen(fen) {
     if (!fen || typeof fen !== 'string') return fen;
-    // Replace invalid double-dash castling '--' with single dash '-'
     let cleaned = fen.replace(/\s+([wb])\s+(--|-)\s+/gi, ' $1 - ');
 
-    // Validate that FEN has exactly 8 ranks and every rank sums to 8 squares
     const parts = cleaned.split(' ');
     if (parts.length < 2) return cleaned;
 
@@ -66,10 +64,7 @@
         if (/\d/.test(ch)) count += parseInt(ch, 10);
         else count += 1;
       }
-      // If rank count is invalid due to DOM transition, reject invalid FEN
-      if (count !== 8) {
-        return null;
-      }
+      if (count !== 8) return null;
     }
 
     return cleaned;
@@ -138,8 +133,8 @@
     }
   }
 
-  // Stockfish Blob Worker
-  async function initWorker() {
+  // Direct Chrome Extension Web Worker (Bypasses Chess.com CSP Restrictions)
+  function initWorker() {
     if (stockfishWorker || isInitializingWorker) return;
     if (!isContextValid()) {
       cleanupOnInvalidatedContext();
@@ -150,13 +145,7 @@
 
     try {
       const workerUrl = chrome.runtime.getURL('stockfish.js');
-      const response = await fetch(workerUrl);
-      const scriptText = await response.text();
-
-      const blob = new Blob([scriptText], { type: 'application/javascript' });
-      const blobUrl = URL.createObjectURL(blob);
-
-      stockfishWorker = new Worker(blobUrl);
+      stockfishWorker = new Worker(workerUrl);
 
       stockfishWorker.onmessage = (e) => {
         let line = '';
@@ -206,7 +195,7 @@
 
       isInitializingWorker = false;
       isWorkerReady = true;
-      console.log('[iChess Engine] Stockfish Worker v5.1 Ready');
+      console.log('[iChess Engine] Stockfish Worker v5.2 (Direct Extension Worker) Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
