@@ -1,9 +1,9 @@
-// extension/content.js — v3.3: Universal DOM Scraper & Precision Auto-Player Engine
+// extension/content.js — v4.0: High-Precision Universal Engine with Hooked Direct Auto-Play
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v3.3 Universal Scraper & Auto-Player initialized');
+  console.log('[iChess Engine] Content Script v4.0 (Universal Scraper & Direct Auto-Player) initialized');
 
   let showOverlay          = true;
   let autoPlayEnabled      = true;
@@ -163,7 +163,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v3.3 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.0 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -229,11 +229,9 @@
       const digits = mDigits[1];
       let colIdx = -1, rowIdx = -1;
       if (digits.length === 4) {
-        // e.g. square-0502 -> file 5 (e), rank 2
         colIdx = parseInt(digits.substring(0, 2), 10) - 1;
         rowIdx = parseInt(digits.substring(2, 4), 10) - 1;
       } else if (digits.length === 2) {
-        // e.g. square-52 -> file 5 (e), rank 2
         colIdx = parseInt(digits[0], 10) - 1;
         rowIdx = parseInt(digits[1], 10) - 1;
       }

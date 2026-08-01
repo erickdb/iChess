@@ -1,40 +1,70 @@
-// extension/main-world.js — v3.3: Main World Injection & Native Chess.com Game Controller
+// extension/main-world.js — v4.0: Prototype Interceptor & Native Game Hook
 
 (function () {
   'use strict';
 
-  console.log('[iChess Main-World Engine] v3.3 Main World Injector Active');
+  console.log('[iChess Main-World Engine] v4.0 Prototype Interceptor Initializing at document_start');
 
-  function getBoardElement() {
-    return document.querySelector('wc-chess-board, chess-board, .board');
+  window.__iChessBoardInstance = null;
+  window.__iChessGameController = null;
+
+  // 1. Hook customElements.define to catch wc-chess-board prototype upon registration
+  const origDefine = window.customElements ? window.customElements.define.bind(window.customElements) : null;
+  if (origDefine) {
+    window.customElements.define = function (name, constructor, options) {
+      if (name === 'wc-chess-board' || name === 'chess-board') {
+        console.log('[iChess Main-World] Intercepted wc-chess-board customElement definition');
+        const origConnected = constructor.prototype.connectedCallback;
+        constructor.prototype.connectedCallback = function () {
+          window.__iChessBoardInstance = this;
+          if (this.game) window.__iChessGameController = this.game;
+          console.log('[iChess Main-World] Captured active wc-chess-board instance & game controller');
+          return origConnected ? origConnected.apply(this, arguments) : undefined;
+        };
+      }
+      return origDefine(name, constructor, options);
+    };
   }
 
+  // Helper to retrieve active board element
+  function getBoardElement() {
+    return window.__iChessBoardInstance || document.querySelector('wc-chess-board, chess-board, .board');
+  }
+
+  // Helper to retrieve active game controller instance
   function getGameController() {
+    if (window.__iChessGameController) return window.__iChessGameController;
+
     const board = getBoardElement();
     if (!board) return null;
 
-    if (board.game) return board.game;
-    if (board.controller) return board.controller;
-    if (board._game) return board._game;
+    if (board.game) {
+      window.__iChessGameController = board.game;
+      return board.game;
+    }
+    if (board.controller) {
+      window.__iChessGameController = board.controller;
+      return board.controller;
+    }
 
     // React Fiber & Props Traversal
     for (const key in board) {
       if (key.startsWith('__reactProps$') || key.startsWith('__reactFiber$')) {
         const val = board[key];
-        if (val?.game) return val.game;
-        if (val?.memoizedProps?.game) return val.memoizedProps.game;
-        if (val?.child?.memoizedProps?.game) return val.child.memoizedProps.game;
-        if (val?.return?.memoizedProps?.game) return val.return.memoizedProps.game;
+        if (val?.game) { window.__iChessGameController = val.game; return val.game; }
+        if (val?.memoizedProps?.game) { window.__iChessGameController = val.memoizedProps.game; return val.memoizedProps.game; }
+        if (val?.child?.memoizedProps?.game) { window.__iChessGameController = val.child.memoizedProps.game; return val.child.memoizedProps.game; }
+        if (val?.return?.memoizedProps?.game) { window.__iChessGameController = val.return.memoizedProps.game; return val.return.memoizedProps.game; }
       }
     }
 
-    if (window.chesscom?.game) return window.chesscom.game;
-    if (window.game) return window.game;
+    if (window.chesscom?.game) { window.__iChessGameController = window.chesscom.game; return window.chesscom.game; }
+    if (window.game) { window.__iChessGameController = window.game; return window.game; }
 
     return null;
   }
 
-  // Native Move Execution & Simulated Click Handler
+  // Listen for execution and reset requests from content script
   window.addEventListener('message', (event) => {
     if (!event.data || typeof event.data !== 'object') return;
 
@@ -46,7 +76,7 @@
       const game  = getGameController();
       let moveExecuted = false;
 
-      // 1. Try Native JS Game Controller Method
+      // 1. Direct Native Method Call
       if (game) {
         const uci = from + to + (promotion || '');
         const obj = { from, to, promotion: promotion || 'q' };
@@ -63,11 +93,11 @@
             moveExecuted = true;
           }
         } catch (err) {
-          console.warn('[iChess Main-World] Native game move error:', err);
+          console.warn('[iChess Main-World] Native game move call error:', err);
         }
       }
 
-      // 2. Dispatch Direct Native Pointer/Mouse Events on Board as Fallback
+      // 2. Direct Synthetic Pointer/Mouse Events on Board as Fallback
       if (!moveExecuted && board) {
         const fromCoords = getSqCoords(board, from);
         const toCoords   = getSqCoords(board, to);
