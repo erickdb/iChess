@@ -1,9 +1,9 @@
-// extension/content.js — v4.5: Robust Dual FEN Scraper & Best Move Visual Assist
+// extension/content.js — v4.6: Zero-Race Condition Engine with Move Legality Validation
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.5 (Dual FEN & Visual Overlay Assist) initialized');
+  console.log('[iChess Engine] Content Script v4.6 (Zero-Race Assist Engine) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -171,7 +171,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.5 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.6 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -237,7 +237,7 @@
   function parseSquareFromElement(el, isFlipped) {
     const cls = el.className || '';
 
-    if (cls.includes('ichess-')) return null;
+    if (cls.includes('ichess-') || cls.includes('dragging') || cls.includes('ghost')) return null;
 
     // Format A: square-0502 or square-52 (digits)
     const mDigits = cls.match(/square-(\d{2,4})/);
@@ -280,25 +280,23 @@
     return null;
   }
 
-  // Parse Piece Character (wk, br, white-king, black-pawn)
+  // Parse Piece Character (Explicit Mapping)
   function parsePieceCharFromElement(el) {
     const cls = el.className || '';
 
-    const m2 = cls.match(/\b([wb])([pnbrqk])\b/i);
-    if (m2) {
-      const color = m2[1].toLowerCase();
-      const type  = m2[2].toLowerCase();
-      return color === 'w' ? type.toUpperCase() : type.toLowerCase();
-    }
+    if (/\b(wk|white-king)\b/i.test(cls)) return 'K';
+    if (/\b(wq|white-queen)\b/i.test(cls)) return 'Q';
+    if (/\b(wr|white-rook)\b/i.test(cls)) return 'R';
+    if (/\b(wb|white-bishop)\b/i.test(cls)) return 'B';
+    if (/\b(wn|white-knight)\b/i.test(cls)) return 'N';
+    if (/\b(wp|white-pawn)\b/i.test(cls)) return 'P';
 
-    const mFull = cls.match(/\b(white|black)[-_]?(king|queen|rook|bishop|knight|pawn)\b/i);
-    if (mFull) {
-      const color = mFull[1].toLowerCase() === 'white' ? 'w' : 'b';
-      const name  = mFull[2].toLowerCase();
-      const typeMap = { king: 'k', queen: 'q', rook: 'r', bishop: 'b', knight: 'n', pawn: 'p' };
-      const type = typeMap[name];
-      return color === 'w' ? type.toUpperCase() : type.toLowerCase();
-    }
+    if (/\b(bk|black-king)\b/i.test(cls)) return 'k';
+    if (/\b(bq|black-queen)\b/i.test(cls)) return 'q';
+    if (/\b(br|black-rook)\b/i.test(cls)) return 'r';
+    if (/\b(bb|black-bishop)\b/i.test(cls)) return 'b';
+    if (/\b(bn|black-knight)\b/i.test(cls)) return 'n';
+    if (/\b(bp|black-pawn)\b/i.test(cls)) return 'p';
 
     return null;
   }
@@ -471,8 +469,29 @@
     if (el) el.remove();
   }
 
-  // Move Selection & Overlay Drawing
+  // Move Selection & Overlay Drawing with Strict Legality Validation
   function processMoveSelection(defaultBestMove) {
+    const fen = getFenState();
+    const fromSq = defaultBestMove.substring(0, 2);
+    const toSq   = defaultBestMove.substring(2, 4);
+
+    // Validate move legality against active FEN position using chess.js
+    const ChessCtor = window.Chess || (typeof Chess !== 'undefined' ? Chess : null);
+    if (ChessCtor && fen) {
+      try {
+        const tempGame = new ChessCtor(fen);
+        const promo = defaultBestMove.length > 4 ? defaultBestMove[4] : 'q';
+        const legalMove = tempGame.move({ from: fromSq, to: toSq, promotion: promo });
+        if (!legalMove) {
+          console.warn(`[iChess Engine] Discarding stale/illegal move ${defaultBestMove} for FEN: ${fen}`);
+          clearOverlay();
+          return;
+        }
+      } catch (e) {
+        console.warn(`[iChess Engine] FEN validation exception for ${defaultBestMove}:`, e);
+      }
+    }
+
     moveCounter++;
     let selectedMove = defaultBestMove;
     let moveType     = 'best';
@@ -490,8 +509,7 @@
                   : '?! Inaccuracy';
       }
     } else if (brilliantHunter) {
-      const fen = getFenState();
-      const b   = detectBrilliantSacrifice(fen, defaultBestMove);
+      const b = detectBrilliantSacrifice(fen, defaultBestMove);
       if (b.isSacrifice) {
         selectedMove = b.move;
         moveType     = 'brilliant';
@@ -499,10 +517,10 @@
       }
     }
 
-    const fromSq = selectedMove.substring(0, 2);
-    const toSq   = selectedMove.substring(2, 4);
+    const finalFrom = selectedMove.substring(0, 2);
+    const finalTo   = selectedMove.substring(2, 4);
 
-    drawOverlay(fromSq, toSq, moveType, moveBadge);
+    drawOverlay(finalFrom, finalTo, moveType, moveBadge);
   }
 
   // Brilliant Hunter Sacrifice Scanner
