@@ -1,9 +1,9 @@
-// extension/content.js — v4.9: Robust Pure DOM FEN Scraper & Best Move Visual Assist
+// extension/content.js — v5.0: Universal Worker Message Handler & Best Move Overlay Assist
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.9 (Pure DOM & Visual Overlay Assist) initialized');
+  console.log('[iChess Engine] Content Script v5.0 (Universal Worker & Visual Assist) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -13,6 +13,7 @@
 
   let stockfishWorker      = null;
   let isInitializingWorker = false;
+  let isWorkerReady        = false;
   let lastEvaluatedFen     = '';
   let evaluatingFen        = '';
   let isEvaluating         = false;
@@ -84,9 +85,7 @@
           mistakeSeverity = msg.config.mistakeSeverity;
 
           if (stockfishWorker) {
-            stockfishWorker.postMessage(
-              `setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`
-            );
+            sendWorkerCmd(`setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`);
           }
 
           hudNeedsUpdate = true;
@@ -106,6 +105,15 @@
       });
     } catch {
       cleanupOnInvalidatedContext();
+    }
+  }
+
+  function sendWorkerCmd(cmd) {
+    if (!stockfishWorker) return;
+    try {
+      stockfishWorker.postMessage(cmd);
+    } catch (e) {
+      console.error('[iChess Engine] sendWorkerCmd error:', e);
     }
   }
 
@@ -130,7 +138,18 @@
       stockfishWorker = new Worker(blobUrl);
 
       stockfishWorker.onmessage = (e) => {
-        const line = typeof e.data === 'string' ? e.data : e.data.toString();
+        let line = '';
+        if (typeof e.data === 'string') {
+          line = e.data;
+        } else if (e.data && typeof e.data === 'object') {
+          line = e.data.data || e.data.text || e.data.line || e.data.message || '';
+        }
+
+        if (!line) return;
+
+        if (line === 'uciok' || line === 'readyok') {
+          isWorkerReady = true;
+        }
 
         if (line.startsWith('info') && line.includes(' score ')) {
           parseMpvLine(line);
@@ -159,14 +178,14 @@
         isEvaluating = false;
       };
 
-      stockfishWorker.postMessage('uci');
-      stockfishWorker.postMessage('setoption name Hash value 32');
-      stockfishWorker.postMessage(
-        `setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`
-      );
-      stockfishWorker.postMessage('isready');
+      sendWorkerCmd('uci');
+      sendWorkerCmd('setoption name Hash value 32');
+      sendWorkerCmd(`setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`);
+      sendWorkerCmd('isready');
+
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.9 Ready');
+      isWorkerReady = true;
+      console.log('[iChess Engine] Stockfish Worker v5.0 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -616,15 +635,15 @@
       evaluatingFen    = fen;
 
       if (isEvaluating) {
-        try { stockfishWorker.postMessage('stop'); } catch { /* ignore */ }
+        try { sendWorkerCmd('stop'); } catch { /* ignore */ }
       }
 
       isEvaluating = true;
       mpvList      = [];
       clearOverlay();
 
-      stockfishWorker.postMessage(`position fen ${fen}`);
-      stockfishWorker.postMessage(`go depth ${targetDepth}`);
+      sendWorkerCmd(`position fen ${fen}`);
+      sendWorkerCmd(`go depth ${targetDepth}`);
     }
   }
 
