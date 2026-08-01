@@ -5,10 +5,11 @@ import { NavLink } from 'react-router-dom';
 import { useNavToggle } from '@hooks/useNavToggle';
 
 const NAV_ITEMS = [
-  { to: '/',         label: 'Home' },
-  { to: '/play',     label: 'Play vs AI' },
-  { to: '/analysis', label: 'Analysis' },
-  { to: '/stats',    label: 'Player Stats' },
+  { to: '/',          label: 'Home' },
+  { to: '/play',      label: 'Play vs AI' },
+  { to: '/analysis',  label: 'Analysis' },
+  { to: '/stats',     label: 'Player Stats' },
+  { to: '/extension', label: 'Extension 🧩' },
 ] as const;
 
 export function Navbar() {

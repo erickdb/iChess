@@ -25,13 +25,20 @@ const FEATURES = [
     link: '/stats',
     cta: 'Check Player Stats →',
   },
+  {
+    icon: '🧩',
+    title: 'Chrome Extension Bot & Overlay',
+    desc: 'Real-time Stockfish engine assist directly inside Chess.com with live overlay highlights, Brilliant Hunter Mode, and humanized Auto-Play.',
+    link: '/extension',
+    cta: 'Install Extension →',
+  },
 ] as const;
 
 const PLATFORM_STATS = [
   { num: 'Depth 24',    label: 'Max AI Level' },
   { num: '7 Categories', label: 'Performance Analysis' },
   { num: 'Live API',    label: 'Chess.com Integration' },
-  { num: '100% Free',   label: 'Open Access' },
+  { num: 'Manifest V3', label: 'Chrome Extension' },
 ] as const;
 
 export function HomePage() {
@@ -50,7 +57,7 @@ export function HomePage() {
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <section className="flex flex-col items-center text-center max-w-[860px] animate-[fadeIn_0.5s_ease-out]">
         <div className="inline-flex items-center gap-2 bg-[rgba(0,173,181,0.1)] border border-[rgba(0,173,181,0.28)] rounded-full px-[18px] py-1.5 text-[13px] font-semibold text-[#00adb5] mb-7 shadow-[0_4px_20px_rgba(0,173,181,0.12)]">
-          <span>NEW</span> • Next-Gen AI Chess &amp; Player Analytics
+          <span>NEW</span> • Next-Gen AI Chess &amp; Chrome Extension Auto-Player
         </div>
 
         <h1 className="gradient-text text-[clamp(2.4rem,5.5vw,4.2rem)] font-black leading-[1.15] tracking-[-1px] mb-5">
@@ -58,14 +65,15 @@ export function HomePage() {
         </h1>
 
         <p className="text-[17px] text-[#94a3b8] leading-[1.65] max-w-[680px] mb-10">
-          A modern chess platform featuring a powerful AI engine up to Depth 24, deep PGN/FEN tactical analysis, and real-time player analytics powered by Chess.com.
+          A modern chess platform featuring a powerful AI engine up to Depth 24, deep PGN/FEN tactical analysis, real-time player analytics, and a powerful Chrome Extension for Chess.com.
         </p>
 
         <div className="flex flex-wrap gap-4 justify-center">
           {[
-            { to: '/play',     icon: '🎮', label: 'Play vs AI' },
-            { to: '/stats',    icon: '📊', label: 'Player Stats Lookup' },
-            { to: '/analysis', icon: '🔍', label: 'PGN & FEN Analysis' },
+            { to: '/play',      icon: '🎮', label: 'Play vs AI' },
+            { to: '/extension', icon: '🧩', label: 'Chrome Extension' },
+            { to: '/stats',     icon: '📊', label: 'Player Stats Lookup' },
+            { to: '/analysis',  icon: '🔍', label: 'PGN & FEN Analysis' },
           ].map(({ to, icon, label }) => (
             <a
               key={to}
@@ -131,17 +139,17 @@ export function HomePage() {
       <section className="w-full">
         <div className="text-center mb-12">
           <h2 className="text-[28px] font-extrabold text-white mb-3">Key Features of iChess</h2>
-          <p className="text-[15px] text-[#64748b]">Everything you need to practice tactics, play games, and analyze performance</p>
+          <p className="text-[15px] text-[#64748b]">Everything you need to practice tactics, play games, analyze performance, and auto-assist on Chess.com</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {FEATURES.map(({ icon, title, desc, link, cta }) => (
             <a
               key={link}
               href={link}
               onClick={(e) => { e.preventDefault(); navigate(link); }}
               className="
-                glass-card flex flex-col gap-4 p-8 no-underline text-inherit
+                glass-card flex flex-col gap-4 p-7 no-underline text-inherit
                 transition-all duration-250
                 hover:-translate-y-1 hover:border-[rgba(0,173,181,0.35)]
                 hover:shadow-[0_16px_40px_rgba(0,0,0,0.35)]
@@ -150,8 +158,8 @@ export function HomePage() {
               <div className="w-[52px] h-[52px] rounded-[14px] bg-[rgba(0,173,181,0.1)] border border-[rgba(0,173,181,0.25)] flex items-center justify-center text-[24px]">
                 {icon}
               </div>
-              <h3 className="text-[19px] font-extrabold text-white m-0">{title}</h3>
-              <p className="text-[14px] text-[#94a3b8] leading-[1.6] m-0 flex-1">{desc}</p>
+              <h3 className="text-[18px] font-extrabold text-white m-0">{title}</h3>
+              <p className="text-[13.5px] text-[#94a3b8] leading-[1.6] m-0 flex-1">{desc}</p>
               <span className="text-[13px] font-bold text-[#00adb5] flex items-center gap-1.5 mt-2">{cta}</span>
             </a>
           ))}

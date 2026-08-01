@@ -7,6 +7,7 @@ import { HomePage } from '@pages/HomePage';
 import { PlayPage } from '@pages/PlayPage';
 import { AnalysisPage } from '@pages/AnalysisPage';
 import { StatsPage } from '@pages/StatsPage';
+import { ExtensionPage } from '@pages/ExtensionPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -24,10 +25,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/"         element={<Layout><HomePage /></Layout>} />
-        <Route path="/play"     element={<Layout><PlayPage /></Layout>} />
-        <Route path="/analysis" element={<Layout><AnalysisPage /></Layout>} />
-        <Route path="/stats"    element={<Layout><StatsPage /></Layout>} />
+        <Route path="/"          element={<Layout><HomePage /></Layout>} />
+        <Route path="/play"      element={<Layout><PlayPage /></Layout>} />
+        <Route path="/analysis"  element={<Layout><AnalysisPage /></Layout>} />
+        <Route path="/stats"     element={<Layout><StatsPage /></Layout>} />
+        <Route path="/extension" element={<Layout><ExtensionPage /></Layout>} />
       </Routes>
     </BrowserRouter>
   );
