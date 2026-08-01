@@ -1,9 +1,9 @@
-// extension/content.js — v4.7: Pure Legal Move Overlay & Stale Evaluation Rejection Engine
+// extension/content.js — v4.8: FEN Sanitizer & Zero-Race Condition Assist Engine
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.7 (Pure Legal Assist Engine) initialized');
+  console.log('[iChess Engine] Content Script v4.8 (Sanitized Dual FEN Engine) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -48,12 +48,19 @@
     clearOverlay();
   }
 
+  // Sanitize FEN strings (e.g. fix Chess.com '--' castling notation to '-')
+  function sanitizeFen(fen) {
+    if (!fen || typeof fen !== 'string') return fen;
+    // Replace invalid double-dash castling '--' with single dash '-'
+    return fen.replace(/\s+([wb])\s+(--|-)\s+/gi, ' $1 - ');
+  }
+
   // Window message listener for Live FEN from main-world.js
   window.addEventListener('message', (event) => {
     if (!event.data || typeof event.data !== 'object') return;
 
     if (event.data.type === 'ICHESS_GAME_CONTROLLER_FEN' && event.data.fen) {
-      liveGameControllerFen = event.data.fen;
+      liveGameControllerFen = sanitizeFen(event.data.fen);
       liveGameControllerTime = Date.now();
     }
   });
@@ -171,7 +178,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.7 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.8 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -228,9 +235,9 @@
 
   function getFenState() {
     if (liveGameControllerFen && (Date.now() - liveGameControllerTime < 1000)) {
-      return liveGameControllerFen;
+      return sanitizeFen(liveGameControllerFen);
     }
-    return extractFenFromDom();
+    return sanitizeFen(extractFenFromDom());
   }
 
   // Universal Piece Square Parser for Chess.com DOM (Handles square-0502, square-52, sq-e2, translate)
