@@ -1,9 +1,9 @@
-// extension/content.js — v4.4: High-Precision Pure DOM Scraper & Best Move Overlay
+// extension/content.js — v4.5: Robust Dual FEN Scraper & Best Move Visual Assist
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.4 (Precision Pure DOM Assist) initialized');
+  console.log('[iChess Engine] Content Script v4.5 (Dual FEN & Visual Overlay Assist) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -21,6 +21,8 @@
   let scanIntervalId       = null;
   let lastGameFenRoot      = '';
   let hudNeedsUpdate       = true;
+  let liveGameControllerFen= null;
+  let liveGameControllerTime = 0;
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -45,6 +47,16 @@
     if (hud) hud.remove();
     clearOverlay();
   }
+
+  // Window message listener for Live FEN from main-world.js
+  window.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data !== 'object') return;
+
+    if (event.data.type === 'ICHESS_GAME_CONTROLLER_FEN' && event.data.fen) {
+      liveGameControllerFen = event.data.fen;
+      liveGameControllerTime = Date.now();
+    }
+  });
 
   // Load saved settings & listen for messages
   if (isContextValid()) {
@@ -128,7 +140,7 @@
         if (line.startsWith('info') && line.includes(' score ')) {
           parseMpvLine(line);
         } else if (line.startsWith('bestmove')) {
-          const currentFen = extractFenFromDom();
+          const currentFen = getFenState();
           isEvaluating = false;
 
           // Discard stale bestmove if position changed during Stockfish search
@@ -143,8 +155,6 @@
           if (bestMove && bestMove !== '(none)') {
             console.log('[iChess Engine] Stockfish recommended move:', bestMove);
             processMoveSelection(bestMove);
-          } else {
-            console.warn('[iChess Engine] Stockfish returned bestmove (none)');
           }
         }
       };
@@ -161,7 +171,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.4 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.5 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -214,6 +224,13 @@
 
   function getBoardElement() {
     return document.querySelector('wc-chess-board, chess-board, .board');
+  }
+
+  function getFenState() {
+    if (liveGameControllerFen && (Date.now() - liveGameControllerTime < 1000)) {
+      return liveGameControllerFen;
+    }
+    return extractFenFromDom();
   }
 
   // Universal Piece Square Parser for Chess.com DOM (Handles square-0502, square-52, sq-e2, translate)
@@ -473,7 +490,7 @@
                   : '?! Inaccuracy';
       }
     } else if (brilliantHunter) {
-      const fen = extractFenFromDom();
+      const fen = getFenState();
       const b   = detectBrilliantSacrifice(fen, defaultBestMove);
       if (b.isSacrifice) {
         selectedMove = b.move;
@@ -568,7 +585,7 @@
 
     if (!stockfishWorker) return;
 
-    const fen = extractFenFromDom();
+    const fen = getFenState();
     if (!fen) return;
 
     // Reset move counter on new match
@@ -582,7 +599,7 @@
 
     // If board position has changed, update immediately
     if (fen !== lastEvaluatedFen) {
-      console.log('[iChess Engine] Position changed, evaluating FEN:', fen);
+      console.log('[iChess Engine] Evaluating new FEN position:', fen);
       lastEvaluatedFen = fen;
       evaluatingFen    = fen;
 
