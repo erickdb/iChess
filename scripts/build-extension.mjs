@@ -42,8 +42,16 @@ for (const file of jsFiles) {
   }
 }
 
-// 3. Copy other assets (manifest.json, overlay.css, popup.html, stockfish.js)
-const staticFiles = ['manifest.json', 'overlay.css', 'popup.html', 'stockfish.js'];
+// 3. Copy other assets (manifest.json, overlay.css, popup.html, stockfish.js, icons)
+const staticFiles = [
+  'manifest.json',
+  'overlay.css',
+  'popup.html',
+  'stockfish.js',
+  'icon16.png',
+  'icon48.png',
+  'icon128.png',
+];
 
 for (const file of staticFiles) {
   const srcPath = path.join(srcDir, file);

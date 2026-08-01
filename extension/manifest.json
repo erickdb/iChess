@@ -11,6 +11,11 @@
   "host_permissions": [
     "https://www.chess.com/*"
   ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "content_scripts": [
     {
       "matches": ["https://www.chess.com/*"],
@@ -21,11 +26,16 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "iChess Settings"
+    "default_title": "iChess Settings",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
   "web_accessible_resources": [
     {
-      "resources": ["stockfish.js"],
+      "resources": ["stockfish.js", "icon16.png", "icon48.png", "icon128.png"],
       "matches": ["https://www.chess.com/*"]
     }
   ]
