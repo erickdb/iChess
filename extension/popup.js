@@ -7,11 +7,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const depthSelect      = document.getElementById('depthSelect');
   const mistakeInterval  = document.getElementById('mistakeInterval');
   const mistakeSeverity  = document.getElementById('mistakeSeverity');
-
-  const btnStartAi       = document.getElementById('btnStartAi');
   const btnResetGame     = document.getElementById('btnResetGame');
 
-  // Load saved settings with updated defaults matching the user preference
   const settings = await chrome.storage.local.get({
     showOverlay: true,
     autoPlay: true,
@@ -57,21 +54,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   mistakeInterval.addEventListener('change', syncSettings);
   mistakeSeverity.addEventListener('change', syncSettings);
 
-  // Action Buttons
-  if (btnStartAi) {
-    btnStartAi.addEventListener('click', () => {
-      sendTabMessage({ type: 'ICHESS_START_AI' });
-      // Visual feedback button press effect
-      btnStartAi.innerText = '⚡ AI Active!';
-      setTimeout(() => { btnStartAi.innerText = '▶️ Start AI'; }, 1500);
-    });
-  }
-
   if (btnResetGame) {
     btnResetGame.addEventListener('click', () => {
       sendTabMessage({ type: 'ICHESS_RESET_GAME' });
       btnResetGame.innerText = '✅ Reset Done';
-      setTimeout(() => { btnResetGame.innerText = '🔄 Reset Game'; }, 1500);
+      setTimeout(() => { btnResetGame.innerText = '🔄 Reset Game / Rematch'; }, 1500);
     });
   }
 });

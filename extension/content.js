@@ -1,9 +1,9 @@
-// extension/content.js — v3.1: Anti-Stuck Dual-World Engine with Quick Start & Reset
+// extension/content.js — v3.2: 100% Pure Scraped DOM FEN Engine with Precision Auto-Player
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v3.1 loaded on Chess.com');
+  console.log('[iChess Engine] Content Script v3.2 (Pure DOM Scraper & Precision Auto-Player) initialized');
 
   let showOverlay          = true;
   let autoPlayEnabled      = true;
@@ -23,8 +23,6 @@
   let scanIntervalId       = null;
   let lastGameFenRoot      = '';
   let hudNeedsUpdate       = true;
-  let mainWorldFen         = null;
-  let mainWorldFenTime     = 0;
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -94,13 +92,6 @@
           if (!showOverlay) clearOverlay();
           lastEvaluatedFen = '';
           scanBoard();
-        } else if (msg.type === 'ICHESS_START_AI') {
-          console.log('[iChess Engine] Manual Start AI triggered');
-          lastEvaluatedFen = '';
-          isEvaluating = false;
-          hudNeedsUpdate = true;
-          updateHudStatus();
-          scanBoard();
         } else if (msg.type === 'ICHESS_RESET_GAME') {
           console.log('[iChess Engine] Reset Game triggered');
           moveCounter = 0;
@@ -108,23 +99,13 @@
           isEvaluating = false;
           clearOverlay();
           window.postMessage({ type: 'ICHESS_MAIN_RESET_GAME' }, '*');
-          setTimeout(scanBoard, 400);
+          setTimeout(scanBoard, 300);
         }
       });
     } catch {
       cleanupOnInvalidatedContext();
     }
   }
-
-  // Window message listener for Main World bridge FEN
-  window.addEventListener('message', (event) => {
-    if (!event.data || typeof event.data !== 'object') return;
-
-    if (event.data.type === 'ICHESS_MAIN_WORLD_FEN' && event.data.fen) {
-      mainWorldFen = event.data.fen;
-      mainWorldFenTime = Date.now();
-    }
-  });
 
   // Stockfish Blob Worker
   async function initWorker() {
@@ -182,7 +163,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v3.1 Ready');
+      console.log('[iChess Engine] Stockfish Worker v3.2 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -240,7 +221,13 @@
 
   // Multi-layer Active Turn Detector
   function detectActiveTurn(board) {
-    // 1. Check Highlighted Last-Move Squares on Board
+    // 1. Check Clock Turn Indicators
+    const whiteClock = document.querySelector('.player-component.white .clock-player-turn, .clock-white.clock-player-turn, .player-tag.white.is-turn, .player-component.bottom.white .clock-player-turn');
+    const blackClock = document.querySelector('.player-component.black .clock-player-turn, .clock-black.clock-player-turn, .player-tag.black.is-turn, .player-component.bottom.black .clock-player-turn');
+    if (whiteClock) return 'w';
+    if (blackClock) return 'b';
+
+    // 2. Check Highlighted Last-Move Squares on Board
     const highlights = board.querySelectorAll('.highlight, [class*="highlight-"]');
     if (highlights && highlights.length >= 2) {
       for (const hl of highlights) {
@@ -262,15 +249,9 @@
       }
     }
 
-    // 2. Check Player Clock Turn Indicators
-    const whiteClock = document.querySelector('.player-component.white .clock-player-turn, .clock-white.clock-player-turn, .player-tag.white.is-turn');
-    const blackClock = document.querySelector('.player-component.black .clock-player-turn, .clock-black.clock-player-turn, .player-tag.black.is-turn');
-    if (whiteClock) return 'w';
-    if (blackClock) return 'b';
-
     // 3. Move List DOM Count
     const moveNodes = document.querySelectorAll(
-      '.white-moveNode, .black-moveNode, .move-node, wc-move-node, .move-row .node'
+      '.white-moveNode, .black-moveNode, wc-move-node, [data-ply]'
     );
     if (moveNodes && moveNodes.length > 0) {
       return (moveNodes.length % 2 === 1) ? 'b' : 'w';
@@ -282,12 +263,8 @@
     return isFlipped ? 'b' : 'w';
   }
 
-  // 100% SCRAPED DOM FEN EXTRACTOR
+  // 100% PURE SCRAPED DOM FEN EXTRACTOR
   function extractFenFromDom() {
-    if (mainWorldFen && (Date.now() - mainWorldFenTime < 1500)) {
-      return mainWorldFen;
-    }
-
     const board = getBoardElement();
     if (!board) return null;
 
@@ -302,6 +279,7 @@
       let colIdx = -1;
       let rowIdx = -1;
 
+      // 1. Try class matching: square-11..square-88 or sq-e3 or square-e3
       const sqMatch = cls.match(/square-(\d)(\d)/) || cls.match(/sq-([a-h])([1-8])/) || cls.match(/square-([a-h])([1-8])/);
       if (sqMatch) {
         if (/^\d$/.test(sqMatch[1])) {
@@ -311,8 +289,26 @@
           colIdx = sqMatch[1].charCodeAt(0) - 97;
           rowIdx = parseInt(sqMatch[2], 10) - 1;
         }
+      } else {
+        // 2. Fallback to style transform matching: e.g. transform: translate(300%, 400%)
+        const style = el.style.transform || el.style.cssText;
+        const transMatch = style.match(/translate\(\s*(\d+)%?\s*,\s*(\d+)%?\s*\)/);
+        if (transMatch) {
+          const fx = parseInt(transMatch[1], 10);
+          const fy = parseInt(transMatch[2], 10);
+          const c = Math.round(fx / 100);
+          const r = Math.round(fy / 100);
+
+          const isFlipped = board.classList.contains('flipped') ||
+                            board.getAttribute('facing') === 'b' ||
+                            board.getAttribute('orientation') === 'black';
+
+          colIdx = isFlipped ? (7 - c) : c;
+          rowIdx = isFlipped ? r : (7 - r);
+        }
       }
 
+      // Piece type matching
       const pMatch = cls.match(/\b([wb])([pnbrqk])\b/i);
       if (pMatch) {
         const color = pMatch[1].toLowerCase();
@@ -542,10 +538,11 @@
     const board = getBoardElement();
     if (!board) return;
 
+    if (isExecutingMove) return;
     isExecutingMove = true;
-    const safetyTimer = setTimeout(() => { isExecutingMove = false; }, 2000);
+    const safetyTimer = setTimeout(() => { isExecutingMove = false; }, 1800);
 
-    // 1. Trigger Main World controller move
+    // 1. Post to Main World for direct game.makeMove execution
     window.postMessage({
       type: 'ICHESS_EXECUTE_MOVE',
       from: fromSq,
@@ -553,7 +550,7 @@
       promotion: promotion || 'q'
     }, '*');
 
-    // 2. Dispatch simulated clicks on Board DOM element
+    // 2. Dispatch simulated pointer clicks directly on Board DOM
     const fromC = getSquareCoordinates(board, fromSq);
     const toC   = getSquareCoordinates(board, toSq);
 
@@ -563,14 +560,12 @@
       return;
     }
 
-    const randomDelay = Math.floor(Math.random() * 150) + 200;
+    const randomDelay = Math.floor(Math.random() * 100) + 150;
 
     setTimeout(() => {
-      // Click source square
       dispatchClickOnBoard(board, fromC.x, fromC.y);
 
       setTimeout(() => {
-        // Click target square
         dispatchClickOnBoard(board, toC.x, toC.y);
         clearTimeout(safetyTimer);
         isExecutingMove = false;
@@ -596,7 +591,6 @@
       isPrimary: true
     };
 
-    // Dispatch to element AND board container directly
     [targetEl, board].forEach(el => {
       if (!el) return;
       try {
