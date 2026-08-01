@@ -1,9 +1,9 @@
-// extension/content.js — v4.6: Zero-Race Condition Engine with Move Legality Validation
+// extension/content.js — v4.7: Pure Legal Move Overlay & Stale Evaluation Rejection Engine
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.6 (Zero-Race Assist Engine) initialized');
+  console.log('[iChess Engine] Content Script v4.7 (Pure Legal Assist Engine) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -171,7 +171,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.6 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.7 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -488,7 +488,9 @@
           return;
         }
       } catch (e) {
-        console.warn(`[iChess Engine] FEN validation exception for ${defaultBestMove}:`, e);
+        console.warn(`[iChess Engine] FEN validation exception for ${defaultBestMove} (stale response discarded):`, e.message);
+        clearOverlay();
+        return; // CRITICAL FIX: RETURN IMMEDIATELY ON INVALID MOVE EXCEPTION!
       }
     }
 
