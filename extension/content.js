@@ -1,9 +1,9 @@
-// extension/content.js — v4.2: Pure Best Move Overlay Assist Engine
+// extension/content.js — v4.3: Pure Scraped DOM FEN & Robust Best Move Overlay Assist
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.2 (Pure Best Move Overlay Assist) initialized');
+  console.log('[iChess Engine] Content Script v4.3 (Robust Pure DOM Assist Engine) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -21,8 +21,6 @@
   let scanIntervalId       = null;
   let lastGameFenRoot      = '';
   let hudNeedsUpdate       = true;
-  let liveHookedFen        = null;
-  let liveHookedFenTime    = 0;
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -47,16 +45,6 @@
     if (hud) hud.remove();
     clearOverlay();
   }
-
-  // Window message listener for Live Hooked FEN from main-world.js
-  window.addEventListener('message', (event) => {
-    if (!event.data || typeof event.data !== 'object') return;
-
-    if (event.data.type === 'ICHESS_LIVE_HOOKED_FEN' && event.data.fen) {
-      liveHookedFen = event.data.fen;
-      liveHookedFenTime = Date.now();
-    }
-  });
 
   // Load saved settings & listen for messages
   if (isContextValid()) {
@@ -140,7 +128,7 @@
         if (line.startsWith('info') && line.includes(' score ')) {
           parseMpvLine(line);
         } else if (line.startsWith('bestmove')) {
-          const currentFen = getFenState();
+          const currentFen = extractFenFromDom();
           isEvaluating = false;
 
           // Discard stale bestmove if position changed during Stockfish search
@@ -170,7 +158,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.2 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.3 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -225,17 +213,12 @@
     return document.querySelector('wc-chess-board, chess-board, .board');
   }
 
-  // Unified FEN State Getter: Prefers Live Hooked FEN, Fallbacks to DOM Scraper
-  function getFenState() {
-    if (liveHookedFen && (Date.now() - liveHookedFenTime < 1000)) {
-      return liveHookedFen;
-    }
-    return extractFenFromDom();
-  }
-
   // Universal Piece Square Parser for Chess.com DOM (Handles square-0502, square-52, sq-e2, translate)
   function parseSquareFromElement(el, isFlipped) {
     const cls = el.className || '';
+
+    // Ignore iChess overlay boxes
+    if (cls.includes('ichess-')) return null;
 
     // Format A: square-0502 or square-52 (digits)
     const mDigits = cls.match(/square-(\d{2,4})/);
@@ -286,7 +269,24 @@
     if (whiteClock) return 'w';
     if (blackClock) return 'b';
 
-    // 2. Check Move List DOM Count
+    // 2. Check Native Last Move Highlight Squares (Exclude iChess overlays)
+    const highlights = board.querySelectorAll('.highlight:not([class*="ichess-"])');
+    if (highlights && highlights.length >= 2) {
+      for (const hl of highlights) {
+        const parsed = parseSquareFromElement(hl, false);
+        if (parsed) {
+          const sqSel = `.square-${parsed.colIdx + 1}${parsed.rowIdx + 1}, .square-0${parsed.colIdx + 1}0${parsed.rowIdx + 1}`;
+          const piece = board.querySelector(`.piece${sqSel}, ${sqSel} .piece`);
+          if (piece) {
+            const pClass = piece.className;
+            if (/\b(w[pnbrqk]|white)\b/i.test(pClass)) return 'b';
+            if (/\b(b[pnbrqk]|black)\b/i.test(pClass)) return 'w';
+          }
+        }
+      }
+    }
+
+    // 3. Move List DOM Count
     const moveNodes = document.querySelectorAll(
       '.white-moveNode, .black-moveNode, wc-move-node, [data-ply]'
     );
@@ -300,7 +300,7 @@
     return isFlipped ? 'b' : 'w';
   }
 
-  // 100% UNIVERSAL SCRAPED DOM FEN EXTRACTOR
+  // 100% PURE SCRAPED DOM FEN EXTRACTOR
   function extractFenFromDom() {
     const board = getBoardElement();
     if (!board) return null;
@@ -437,7 +437,7 @@
     if (el) el.remove();
   }
 
-  // Move Selection & Triggering (Pure Best Move Overlay)
+  // Move Selection & Overlay Drawing
   function processMoveSelection(defaultBestMove) {
     moveCounter++;
     let selectedMove = defaultBestMove;
@@ -456,7 +456,7 @@
                   : '?! Inaccuracy';
       }
     } else if (brilliantHunter) {
-      const fen = getFenState();
+      const fen = extractFenFromDom();
       const b   = detectBrilliantSacrifice(fen, defaultBestMove);
       if (b.isSacrifice) {
         selectedMove = b.move;
@@ -468,7 +468,6 @@
     const fromSq = selectedMove.substring(0, 2);
     const toSq   = selectedMove.substring(2, 4);
 
-    // Draw overlay on board screen
     drawOverlay(fromSq, toSq, moveType, moveBadge);
   }
 
@@ -552,7 +551,7 @@
 
     if (!stockfishWorker) return;
 
-    const fen = getFenState();
+    const fen = extractFenFromDom();
     if (!fen) return;
 
     // Reset move counter on new match

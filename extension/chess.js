@@ -3366,19 +3366,25 @@ class Chess {
     }
 }
 
-exports.BISHOP = BISHOP;
-exports.BLACK = BLACK;
-exports.Chess = Chess;
-exports.DEFAULT_POSITION = DEFAULT_POSITION;
-exports.KING = KING;
-exports.KNIGHT = KNIGHT;
-exports.Move = Move;
-exports.PAWN = PAWN;
-exports.QUEEN = QUEEN;
-exports.ROOK = ROOK;
-exports.SEVEN_TAG_ROSTER = SEVEN_TAG_ROSTER;
-exports.SQUARES = SQUARES;
-exports.WHITE = WHITE;
-exports.validateFen = validateFen;
-exports.xoroshiro128 = xoroshiro128;
+if (typeof exports !== 'undefined') {
+  exports.BISHOP = BISHOP;
+  exports.BLACK = BLACK;
+  exports.Chess = Chess;
+  exports.DEFAULT_POSITION = DEFAULT_POSITION;
+  exports.KING = KING;
+  exports.KNIGHT = KNIGHT;
+  exports.Move = Move;
+  exports.PAWN = PAWN;
+  exports.QUEEN = QUEEN;
+  exports.ROOK = ROOK;
+  exports.SEVEN_TAG_ROSTER = SEVEN_TAG_ROSTER;
+  exports.SQUARES = SQUARES;
+  exports.WHITE = WHITE;
+  exports.validateFen = validateFen;
+  exports.xoroshiro128 = xoroshiro128;
+}
+if (typeof window !== 'undefined') {
+  window.Chess = Chess;
+}
+
 //# sourceMappingURL=chess.js.map

@@ -1,9 +1,9 @@
-// extension/main-world.js — v4.1: Live Hooked FEN Broadcast & Direct Move Engine
+// extension/main-world.js — v4.3: Prototype Interceptor & Clean Game Controller Bridge
 
 (function () {
   'use strict';
 
-  console.log('[iChess Main-World Engine] v4.1 Prototype Interceptor Initializing at document_start');
+  console.log('[iChess Main-World Engine] v4.3 Prototype Interceptor Initializing at document_start');
 
   window.__iChessBoardInstance = null;
   window.__iChessGameController = null;
@@ -26,105 +26,11 @@
     };
   }
 
-  function getBoardElement() {
-    return window.__iChessBoardInstance || document.querySelector('wc-chess-board, chess-board, .board');
-  }
-
-  function getGameController() {
-    if (window.__iChessGameController) return window.__iChessGameController;
-
-    const board = getBoardElement();
-    if (!board) return null;
-
-    if (board.game) {
-      window.__iChessGameController = board.game;
-      return board.game;
-    }
-    if (board.controller) {
-      window.__iChessGameController = board.controller;
-      return board.controller;
-    }
-
-    // React Fiber & Props Traversal
-    for (const key in board) {
-      if (key.startsWith('__reactProps$') || key.startsWith('__reactFiber$')) {
-        const val = board[key];
-        if (val?.game) { window.__iChessGameController = val.game; return val.game; }
-        if (val?.memoizedProps?.game) { window.__iChessGameController = val.memoizedProps.game; return val.memoizedProps.game; }
-        if (val?.child?.memoizedProps?.game) { window.__iChessGameController = val.child.memoizedProps.game; return val.child.memoizedProps.game; }
-        if (val?.return?.memoizedProps?.game) { window.__iChessGameController = val.return.memoizedProps.game; return val.return.memoizedProps.game; }
-      }
-    }
-
-    if (window.chesscom?.game) { window.__iChessGameController = window.chesscom.game; return window.chesscom.game; }
-    if (window.game) { window.__iChessGameController = window.game; return window.game; }
-
-    return null;
-  }
-
-  // Continuously broadcast live FEN from hooked game controller to content script
-  setInterval(() => {
-    const game = getGameController();
-    if (game) {
-      let fen = null;
-      try {
-        if (typeof game.getFen === 'function') fen = game.getFen();
-        else if (typeof game.fen === 'string') fen = game.fen;
-        else if (typeof game.getFEN === 'function') fen = game.getFEN();
-      } catch { /* ignore */ }
-
-      if (fen) {
-        window.postMessage({ type: 'ICHESS_LIVE_HOOKED_FEN', fen }, '*');
-      }
-    }
-  }, 200);
-
-  // Listen for execution and reset requests from content script
+  // Listen for reset requests from content script
   window.addEventListener('message', (event) => {
     if (!event.data || typeof event.data !== 'object') return;
 
-    if (event.data.type === 'ICHESS_EXECUTE_MOVE') {
-      const { from, to, promotion } = event.data;
-      if (!from || !to) return;
-
-      const board = getBoardElement();
-      const game  = getGameController();
-      let moveExecuted = false;
-
-      // 1. Direct Native Method Call
-      if (game) {
-        const uci = from + to + (promotion || '');
-        const obj = { from, to, promotion: promotion || 'q' };
-
-        try {
-          if (typeof game.makeMove === 'function') {
-            game.makeMove(uci);
-            moveExecuted = true;
-          } else if (typeof game.move === 'function') {
-            game.move(obj);
-            moveExecuted = true;
-          } else if (typeof game.playMove === 'function') {
-            game.playMove(obj);
-            moveExecuted = true;
-          }
-        } catch (err) {
-          console.warn('[iChess Main-World] Native game move call error:', err);
-        }
-      }
-
-      // 2. Direct Synthetic Pointer/Mouse Events on Board as Fallback
-      if (!moveExecuted && board) {
-        const fromCoords = getSqCoords(board, from);
-        const toCoords   = getSqCoords(board, to);
-
-        if (fromCoords && toCoords) {
-          dispatchBoardClick(board, fromCoords.x, fromCoords.y);
-          setTimeout(() => {
-            dispatchBoardClick(board, toCoords.x, toCoords.y);
-          }, 120);
-        }
-      }
-    } else if (event.data.type === 'ICHESS_MAIN_RESET_GAME') {
+    if (event.data.type === 'ICHESS_MAIN_RESET_GAME') {
       const rematchBtns = document.querySelectorAll(
         'button[data-cy="new-game-button"], .game-over-button, .ui_v5-button-component.ui_v5-button-primary, button.rematch-button, .game-controls-button'
       );
@@ -135,57 +41,5 @@
       });
     }
   });
-
-  function getSqCoords(board, sq) {
-    if (!sq || sq.length < 2) return null;
-    const rect    = board.getBoundingClientRect();
-    const fileIdx = sq.charCodeAt(0) - 97;
-    const rankNum = parseInt(sq[1], 10);
-
-    const isFlipped = board.classList.contains('flipped') ||
-                      board.getAttribute('facing') === 'b' ||
-                      board.getAttribute('orientation') === 'black';
-
-    const col = isFlipped ? (7 - fileIdx) : fileIdx;
-    const row = isFlipped ? (rankNum - 1) : (8 - rankNum);
-
-    const sw = rect.width / 8;
-    const sh = rect.height / 8;
-
-    return {
-      x: rect.left + (col + 0.5) * sw,
-      y: rect.top  + (row + 0.5) * sh
-    };
-  }
-
-  function dispatchBoardClick(board, x, y) {
-    const target = document.elementFromPoint(x, y) || board;
-    const opts = {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      view: window,
-      clientX: x,
-      clientY: y,
-      screenX: x,
-      screenY: y,
-      button: 0,
-      buttons: 1,
-      pointerId: 1,
-      pointerType: 'mouse',
-      isPrimary: true
-    };
-
-    [target, board].forEach(el => {
-      if (!el) return;
-      try {
-        el.dispatchEvent(new PointerEvent('pointerdown', opts));
-        el.dispatchEvent(new MouseEvent('mousedown',    opts));
-        el.dispatchEvent(new PointerEvent('pointerup',   opts));
-        el.dispatchEvent(new MouseEvent('mouseup',      opts));
-        el.dispatchEvent(new MouseEvent('click',        opts));
-      } catch { /* ignore */ }
-    });
-  }
 
 })();
