@@ -1,9 +1,9 @@
-// extension/content.js — v4.8: FEN Sanitizer & Zero-Race Condition Assist Engine
+// extension/content.js — v4.9: Robust Pure DOM FEN Scraper & Best Move Visual Assist
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.8 (Sanitized Dual FEN Engine) initialized');
+  console.log('[iChess Engine] Content Script v4.9 (Pure DOM & Visual Overlay Assist) initialized');
 
   let showOverlay          = true;
   let brilliantHunter      = true;
@@ -21,8 +21,6 @@
   let scanIntervalId       = null;
   let lastGameFenRoot      = '';
   let hudNeedsUpdate       = true;
-  let liveGameControllerFen= null;
-  let liveGameControllerTime = 0;
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -48,22 +46,12 @@
     clearOverlay();
   }
 
-  // Sanitize FEN strings (e.g. fix Chess.com '--' castling notation to '-')
+  // Sanitize FEN strings to ensure 100% valid standard FEN syntax
   function sanitizeFen(fen) {
     if (!fen || typeof fen !== 'string') return fen;
     // Replace invalid double-dash castling '--' with single dash '-'
     return fen.replace(/\s+([wb])\s+(--|-)\s+/gi, ' $1 - ');
   }
-
-  // Window message listener for Live FEN from main-world.js
-  window.addEventListener('message', (event) => {
-    if (!event.data || typeof event.data !== 'object') return;
-
-    if (event.data.type === 'ICHESS_GAME_CONTROLLER_FEN' && event.data.fen) {
-      liveGameControllerFen = sanitizeFen(event.data.fen);
-      liveGameControllerTime = Date.now();
-    }
-  });
 
   // Load saved settings & listen for messages
   if (isContextValid()) {
@@ -178,7 +166,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.8 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.9 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -234,9 +222,6 @@
   }
 
   function getFenState() {
-    if (liveGameControllerFen && (Date.now() - liveGameControllerTime < 1000)) {
-      return sanitizeFen(liveGameControllerFen);
-    }
     return sanitizeFen(extractFenFromDom());
   }
 
@@ -497,7 +482,7 @@
       } catch (e) {
         console.warn(`[iChess Engine] FEN validation exception for ${defaultBestMove} (stale response discarded):`, e.message);
         clearOverlay();
-        return; // CRITICAL FIX: RETURN IMMEDIATELY ON INVALID MOVE EXCEPTION!
+        return;
       }
     }
 
