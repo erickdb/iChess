@@ -2,7 +2,6 @@
 
 document.addEventListener('DOMContentLoaded', async () => {
   const toggleOverlay    = document.getElementById('toggleOverlay');
-  const toggleAutoPlay   = document.getElementById('toggleAutoPlay');
   const toggleBrilliant  = document.getElementById('toggleBrilliant');
   const depthSelect      = document.getElementById('depthSelect');
   const mistakeInterval  = document.getElementById('mistakeInterval');
@@ -11,7 +10,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const settings = await chrome.storage.local.get({
     showOverlay: true,
-    autoPlay: true,
     brilliantHunter: true,
     depth: 6,
     mistakeInterval: 5,
@@ -19,7 +17,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   toggleOverlay.checked   = settings.showOverlay;
-  toggleAutoPlay.checked  = settings.autoPlay;
   toggleBrilliant.checked = settings.brilliantHunter;
   depthSelect.value       = String(settings.depth);
   mistakeInterval.value   = String(settings.mistakeInterval);
@@ -36,7 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function syncSettings() {
     const config = {
       showOverlay: toggleOverlay.checked,
-      autoPlay: toggleAutoPlay.checked,
+      autoPlay: false,
       brilliantHunter: toggleBrilliant.checked,
       depth: parseInt(depthSelect.value, 10),
       mistakeInterval: parseInt(mistakeInterval.value, 10),
@@ -48,7 +45,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   toggleOverlay.addEventListener('change', syncSettings);
-  toggleAutoPlay.addEventListener('change', syncSettings);
   toggleBrilliant.addEventListener('change', syncSettings);
   depthSelect.addEventListener('change', syncSettings);
   mistakeInterval.addEventListener('change', syncSettings);

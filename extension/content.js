@@ -1,12 +1,11 @@
-// extension/content.js — v4.1: Live Hooked FEN & Precision Auto-Player Engine
+// extension/content.js — v4.2: Pure Best Move Overlay Assist Engine
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v4.1 (Hooked FEN + Universal Scraper) initialized');
+  console.log('[iChess Engine] Content Script v4.2 (Pure Best Move Overlay Assist) initialized');
 
   let showOverlay          = true;
-  let autoPlayEnabled      = true;
   let brilliantHunter      = true;
   let targetDepth          = 6;
   let mistakeInterval      = 5;
@@ -19,7 +18,6 @@
   let isEvaluating         = false;
   let moveCounter          = 0;
   let mpvList              = [];
-  let isExecutingMove      = false;
   let scanIntervalId       = null;
   let lastGameFenRoot      = '';
   let hudNeedsUpdate       = true;
@@ -65,7 +63,6 @@
     try {
       chrome.storage.local.get({
         showOverlay: true,
-        autoPlay: true,
         brilliantHunter: true,
         depth: 6,
         mistakeInterval: 5,
@@ -73,7 +70,6 @@
       }, (res) => {
         if (!isContextValid()) return;
         showOverlay     = res.showOverlay;
-        autoPlayEnabled = res.autoPlay;
         brilliantHunter = res.brilliantHunter;
         targetDepth     = res.depth;
         mistakeInterval = res.mistakeInterval;
@@ -87,7 +83,6 @@
 
         if (msg.type === 'ICHESS_SETTINGS_UPDATE' && msg.config) {
           showOverlay     = msg.config.showOverlay;
-          autoPlayEnabled = msg.config.autoPlay;
           brilliantHunter = msg.config.brilliantHunter;
           targetDepth     = msg.config.depth;
           mistakeInterval = msg.config.mistakeInterval;
@@ -175,7 +170,7 @@
       );
       stockfishWorker.postMessage('isready');
       isInitializingWorker = false;
-      console.log('[iChess Engine] Stockfish Worker v4.1 Ready');
+      console.log('[iChess Engine] Stockfish Worker v4.2 Ready');
     } catch (err) {
       isInitializingWorker = false;
       isEvaluating = false;
@@ -222,7 +217,6 @@
     let statusText = `Depth ${targetDepth}`;
     if (brilliantHunter) statusText += ' | 🔥 Brilliant Hunter';
     if (mistakeInterval > 0) statusText += ` | ⚠️ Mistake: 1/${mistakeInterval}`;
-    if (autoPlayEnabled) statusText += ' | ⚡ Auto-Play';
 
     hud.innerHTML = `<div class="dot"></div><div>iChess: ${statusText}</div>`;
   }
@@ -443,7 +437,7 @@
     if (el) el.remove();
   }
 
-  // Move Selection & Triggering
+  // Move Selection & Triggering (Pure Best Move Overlay)
   function processMoveSelection(defaultBestMove) {
     moveCounter++;
     let selectedMove = defaultBestMove;
@@ -471,15 +465,11 @@
       }
     }
 
-    const fromSq    = selectedMove.substring(0, 2);
-    const toSq      = selectedMove.substring(2, 4);
-    const promotion = selectedMove.length > 4 ? selectedMove[4] : undefined;
+    const fromSq = selectedMove.substring(0, 2);
+    const toSq   = selectedMove.substring(2, 4);
 
+    // Draw overlay on board screen
     drawOverlay(fromSq, toSq, moveType, moveBadge);
-
-    if (autoPlayEnabled && !isExecutingMove) {
-      autoPlayMove(fromSq, toSq, promotion);
-    }
   }
 
   // Brilliant Hunter Sacrifice Scanner
@@ -548,76 +538,6 @@
     }
 
     return valid[1]?.move || defaultBest;
-  }
-
-  // High-Precision Dual-World Auto-Play Engine
-  function autoPlayMove(fromSq, toSq, promotion) {
-    const board = getBoardElement();
-    if (!board) return;
-
-    if (isExecutingMove) return;
-    isExecutingMove = true;
-    const safetyTimer = setTimeout(() => { isExecutingMove = false; }, 1800);
-
-    // 1. Post to Main World for direct game.makeMove execution
-    window.postMessage({
-      type: 'ICHESS_EXECUTE_MOVE',
-      from: fromSq,
-      to: toSq,
-      promotion: promotion || 'q'
-    }, '*');
-
-    // 2. Dispatch simulated pointer clicks directly on Board DOM
-    const fromC = getSquareCoordinates(board, fromSq);
-    const toC   = getSquareCoordinates(board, toSq);
-
-    if (!fromC || !toC) {
-      clearTimeout(safetyTimer);
-      isExecutingMove = false;
-      return;
-    }
-
-    const randomDelay = Math.floor(Math.random() * 100) + 150;
-
-    setTimeout(() => {
-      dispatchClickOnBoard(board, fromC.x, fromC.y);
-
-      setTimeout(() => {
-        dispatchClickOnBoard(board, toC.x, toC.y);
-        clearTimeout(safetyTimer);
-        isExecutingMove = false;
-      }, 150);
-    }, randomDelay);
-  }
-
-  function dispatchClickOnBoard(board, x, y) {
-    const targetEl = document.elementFromPoint(x, y) || board;
-    const opts = {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      view: window,
-      clientX: x,
-      clientY: y,
-      screenX: x,
-      screenY: y,
-      button: 0,
-      buttons: 1,
-      pointerId: 1,
-      pointerType: 'mouse',
-      isPrimary: true
-    };
-
-    [targetEl, board].forEach(el => {
-      if (!el) return;
-      try {
-        el.dispatchEvent(new PointerEvent('pointerdown', opts));
-        el.dispatchEvent(new MouseEvent('mousedown',    opts));
-        el.dispatchEvent(new PointerEvent('pointerup',   opts));
-        el.dispatchEvent(new MouseEvent('mouseup',      opts));
-        el.dispatchEvent(new MouseEvent('click',        opts));
-      } catch { /* ignore */ }
-    });
   }
 
   // Main Scan Loop
