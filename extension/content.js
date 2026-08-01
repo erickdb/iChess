@@ -1,9 +1,9 @@
-// extension/content.js — Advanced Engine Assistant with Math-Based Grid & Dual Execution
+// extension/content.js — Advanced Engine Assistant with Invalidated Context Guard & Auto-Cleanup
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v1.4 loaded on Chess.com');
+  console.log('[iChess Engine] Content Script v1.5 loaded on Chess.com');
 
   const ChessCtor = window.Chess || (typeof Chess !== 'undefined' ? Chess : null);
 
@@ -20,51 +20,83 @@
   let moveCounter      = 0;         // Tracks game move count for mistake scheduling
   let mpvList          = [];
   let isExecutingMove  = false;
+  let scanIntervalId   = null;
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
   const PIECE_NAMES_ID = { p: 'Pion', n: 'Kuda', b: 'Gajah', r: 'Benteng', q: 'Menteri' };
 
+  // Guard against "Extension context invalidated" error when extension is reloaded
+  function isContextValid() {
+    try {
+      return Boolean(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
+    }
+  }
+
+  function cleanupOnInvalidatedContext() {
+    if (scanIntervalId) {
+      clearInterval(scanIntervalId);
+      scanIntervalId = null;
+    }
+    if (stockfishWorker) {
+      try { stockfishWorker.terminate(); } catch { /* ignore */ }
+      stockfishWorker = null;
+    }
+  }
+
   // Sync settings from chrome storage or popup messaging
-  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get({
-      showOverlay: true,
-      autoPlay: false,
-      brilliantHunter: false,
-      depth: 12,
-      mistakeInterval: 0,
-      mistakeSeverity: 'mistake'
-    }, (res) => {
-      showOverlay     = res.showOverlay;
-      autoPlayEnabled = res.autoPlay;
-      brilliantHunter = res.brilliantHunter;
-      targetDepth     = res.depth;
-      mistakeInterval = res.mistakeInterval;
-      mistakeSeverity = res.mistakeSeverity;
-      updateHudStatus();
-    });
-
-    chrome.runtime.onMessage.addListener((msg) => {
-      if (msg.type === 'ICHESS_SETTINGS_UPDATE' && msg.config) {
-        showOverlay     = msg.config.showOverlay;
-        autoPlayEnabled = msg.config.autoPlay;
-        brilliantHunter = msg.config.brilliantHunter;
-        targetDepth     = msg.config.depth;
-        mistakeInterval = msg.config.mistakeInterval;
-        mistakeSeverity = msg.config.mistakeSeverity;
-
-        if (stockfishWorker) {
-          stockfishWorker.postMessage(`setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`);
-        }
-
+  if (isContextValid()) {
+    try {
+      chrome.storage.local.get({
+        showOverlay: true,
+        autoPlay: false,
+        brilliantHunter: false,
+        depth: 12,
+        mistakeInterval: 0,
+        mistakeSeverity: 'mistake'
+      }, (res) => {
+        if (!isContextValid()) return;
+        showOverlay     = res.showOverlay;
+        autoPlayEnabled = res.autoPlay;
+        brilliantHunter = res.brilliantHunter;
+        targetDepth     = res.depth;
+        mistakeInterval = res.mistakeInterval;
+        mistakeSeverity = res.mistakeSeverity;
         updateHudStatus();
-        if (!showOverlay) clearOverlay();
-      }
-    });
+      });
+
+      chrome.runtime.onMessage.addListener((msg) => {
+        if (!isContextValid()) return;
+        if (msg.type === 'ICHESS_SETTINGS_UPDATE' && msg.config) {
+          showOverlay     = msg.config.showOverlay;
+          autoPlayEnabled = msg.config.autoPlay;
+          brilliantHunter = msg.config.brilliantHunter;
+          targetDepth     = msg.config.depth;
+          mistakeInterval = msg.config.mistakeInterval;
+          mistakeSeverity = msg.config.mistakeSeverity;
+
+          if (stockfishWorker) {
+            stockfishWorker.postMessage(`setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`);
+          }
+
+          updateHudStatus();
+          if (!showOverlay) clearOverlay();
+        }
+      });
+    } catch {
+      cleanupOnInvalidatedContext();
+    }
   }
 
   // Initialize Stockfish Web Worker
   function initWorker() {
     if (stockfishWorker) return;
+    if (!isContextValid()) {
+      cleanupOnInvalidatedContext();
+      return;
+    }
+
     try {
       const workerUrl = chrome.runtime.getURL('stockfish.js');
       stockfishWorker = new Worker(workerUrl);
@@ -88,8 +120,12 @@
       stockfishWorker.postMessage('setoption name Hash value 32');
       stockfishWorker.postMessage('setoption name MultiPV value 5');
       stockfishWorker.postMessage('isready');
-      console.log('[iChess Engine] Stockfish Worker v1.4 Ready');
+      console.log('[iChess Engine] Stockfish Worker v1.5 Ready');
     } catch (err) {
+      if (err.message && err.message.includes('invalidated')) {
+        cleanupOnInvalidatedContext();
+        return;
+      }
       console.error('[iChess Engine] Worker init failed:', err);
     }
   }
@@ -139,12 +175,10 @@
     const board = document.querySelector('wc-chess-board, chess-board, .board');
     if (!board) return null;
 
-    // Search React fiber tree for game object
     const reactKey = Object.keys(board).find(k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$'));
     if (reactKey && board[reactKey]) {
       const node = board[reactKey];
 
-      // Recursive search for getFen function in React props
       const findFenInObject = (obj, depth = 0) => {
         if (!obj || depth > 4) return null;
         if (typeof obj.getFen === 'function') return obj.getFen();
@@ -169,7 +203,7 @@
     return null;
   }
 
-  // Pure Math-Based 8x8 Grid Coordinate Calculation (Works on 100% Chess.com Layouts)
+  // Pure Math-Based 8x8 Grid Coordinate Calculation
   function getSquareCoordinates(board, sq) {
     if (!sq || sq.length < 2) return null;
 
@@ -177,7 +211,6 @@
     const fileIdx = sq.charCodeAt(0) - 97; // 'a' -> 0, 'h' -> 7
     const rankNum = parseInt(sq[1], 10);   // 1 .. 8
 
-    // Check board orientation (is Black on bottom?)
     const isFlipped = board.classList.contains('flipped') ||
                       board.getAttribute('facing') === 'b' ||
                       board.getAttribute('orientation') === 'black';
@@ -252,7 +285,7 @@
     if (el) el.remove();
   }
 
-  // Process Move Selection: Best Move vs Brilliant Hunter vs Scheduled Mistake Generator
+  // Process Move Selection
   function processMoveSelection(defaultBestMove) {
     moveCounter++;
     let selectedMove = defaultBestMove;
@@ -372,7 +405,6 @@
 
     isExecutingMove = true;
 
-    // Method A: Direct Internal Game Object Execution (Instant & 100% Reliable)
     const reactKey = Object.keys(board).find(k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$'));
     if (reactKey && board[reactKey]) {
       const findGameObj = (obj, depth = 0) => {
@@ -399,13 +431,10 @@
             isExecutingMove = false;
             return;
           }
-        } catch (err) {
-          console.log('[iChess Engine] Direct move fallback to pointer click...');
-        }
+        } catch { /* fallback to pointer */ }
       }
     }
 
-    // Method B: Screen Coordinate Pointer Event Clicking
     const fromCoords = getSquareCoordinates(board, fromSq);
     const toCoords   = getSquareCoordinates(board, toSq);
 
@@ -414,7 +443,6 @@
       return;
     }
 
-    // Human reaction delay (400ms - 750ms)
     const delay = Math.floor(Math.random() * 350) + 400;
 
     setTimeout(() => {
@@ -448,6 +476,11 @@
   }
 
   function scanBoard() {
+    if (!isContextValid()) {
+      cleanupOnInvalidatedContext();
+      return;
+    }
+
     initWorker();
     updateHudStatus();
 
@@ -456,11 +489,13 @@
       lastEvaluatedFen = fen;
       isEvaluating = true;
       mpvList = [];
-      stockfishWorker.postMessage(`position fen ${fen}`);
-      stockfishWorker.postMessage(`go depth ${targetDepth}`);
+      if (stockfishWorker) {
+        stockfishWorker.postMessage(`position fen ${fen}`);
+        stockfishWorker.postMessage(`go depth ${targetDepth}`);
+      }
     }
   }
 
-  setInterval(scanBoard, 600);
+  scanIntervalId = setInterval(scanBoard, 600);
 
 })();
