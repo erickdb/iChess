@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>iChess Assistant & Auto-Player</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 270px;
+      padding: 16px;
+      background: #07090f;
+      color: #f1f5f9;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #232c45;
+    }
+    .title {
+      font-size: 16px;
+      font-weight: 900;
+      color: #ffffff;
+    }
+    .title span { color: #00adb5; }
+    .badge {
+      background: rgba(0, 173, 181, 0.2);
+      border: 1px solid rgba(0, 173, 181, 0.4);
+      color: #00adb5;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #131929;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #232c45;
+    }
+    .row.highlight-brilliant {
+      background: rgba(255, 75, 75, 0.1);
+      border-color: rgba(255, 75, 75, 0.4);
+    }
+    .label {
+      font-weight: 600;
+      color: #94a3b8;
+    }
+    .label-title {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #00adb5;
+      margin-top: 4px;
+      margin-bottom: 2px;
+    }
+    /* Switch toggle */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #232c45; transition: .2s; border-radius: 20px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px;
+      background-color: white; transition: .2s; border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #00adb5; }
+    input:checked + .slider:before { transform: translateX(16px); }
+
+    input.brilliant-switch:checked + .slider { background-color: #ff4b4b; }
+
+    select {
+      width: 100%;
+      background: #131929;
+      border: 1px solid #232c45;
+      color: #fff;
+      padding: 8px;
+      border-radius: 8px;
+      font-weight: 600;
+      outline: none;
+    }
+    select:focus { border-color: #00adb5; }
+    .footer-note {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 14px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">i<span>Chess</span> Control</div>
+    <div class="badge">PRO v1.2</div>
+  </div>
+
+  <div class="section">
+    <!-- Toggles -->
+    <div class="row">
+      <span class="label">Show Best Move Overlay</span>
+      <label class="switch">
+        <input type="checkbox" id="toggleOverlay" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="row">
+      <span class="label">Auto-Play Moves</span>
+      <label class="switch">
+        <input type="checkbox" id="toggleAutoPlay">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- 🔥 Brilliant Hunter Mode -->
+    <div class="row highlight-brilliant">
+      <div>
+        <div style="font-weight: 800; color: #ff4b4b; font-size: 12px;">🔥 Brilliant Hunter</div>
+        <div style="font-size: 10px; color: #94a3b8;">Hunts for piece sacrifices (!!)</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleBrilliant" class="brilliant-switch">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Stockfish Depth -->
+    <div>
+      <div class="label-title">Calculated Depth (Strength)</div>
+      <select id="depthSelect">
+        <option value="6">Depth 6 — Beginner (~1350 ELO)</option>
+        <option value="10">Depth 10 — Candidate Master (~1850 ELO)</option>
+        <option value="12" selected>Depth 12 — Expert (~2100 ELO)</option>
+        <option value="16">Depth 16 — Grandmaster (~2700 ELO)</option>
+        <option value="20">Depth 20 — Engine God (~3200 ELO)</option>
+        <option value="24">Depth 24 — Maximum Depth (~3500 ELO)</option>
+      </select>
+    </div>
+
+    <!-- ⚠️ Human Mistake Generator -->
+    <div>
+      <div class="label-title">Mistake Generator (Human-Like)</div>
+      <select id="mistakeInterval">
+        <option value="0" selected>Disabled (Play 100% Best Moves)</option>
+        <option value="3">Make Mistake Every 3 Moves</option>
+        <option value="5">Make Mistake Every 5 Moves (Recommended)</option>
+        <option value="7">Make Mistake Every 7 Moves</option>
+        <option value="10">Make Mistake Every 10 Moves</option>
+      </select>
+    </div>
+
+    <!-- Mistake Severity -->
+    <div>
+      <div class="label-title">Mistake Type / Severity</div>
+      <select id="mistakeSeverity">
+        <option value="inaccuracy">Inaccuracy (~ -100 CP)</option>
+        <option value="mistake" selected>Mistake (~ -250 CP)</option>
+        <option value="blunder">Blunder (~ -500 CP)</option>
+      </select>
+    </div>
+
+  </div>
+
+  <div class="footer-note">iChess Advanced Engine & Anti-Ban Helper</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
