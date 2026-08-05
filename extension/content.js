@@ -1,27 +1,26 @@
-// extension/content.js — v5.2: Direct Extension Worker & Guaranteed Best Move Overlay Assist
+// extension/content.js — v5.1: Main-World Engine Bridge + Best Move Overlay
 
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v5.2 (Direct Extension Worker Engine) initialized');
+  console.log('[iChess Engine] Content Script v5.1 (Main-World Engine Bridge) initialized');
 
-  let showOverlay          = true;
-  let brilliantHunter      = true;
-  let targetDepth          = 6;
-  let mistakeInterval      = 5;
-  let mistakeSeverity      = 'inaccuracy';
+  let showOverlay = true;
+  let brilliantHunter = true;
+  let targetDepth = 6;
 
-  let stockfishWorker      = null;
-  let isInitializingWorker = false;
-  let isWorkerReady        = false;
-  let lastEvaluatedFen     = '';
-  let evaluatingFen        = '';
-  let isEvaluating         = false;
-  let moveCounter          = 0;
-  let mpvList              = [];
-  let scanIntervalId       = null;
-  let lastGameFenRoot      = '';
-  let hudNeedsUpdate       = true;
+  let isEngineReady = false;  // true once Stockfish confirms readyok
+  let isInitSent = false;     // true once initEngine() has been called once
+  let lastEvaluatedFen = '';
+  let evaluatingFen = '';
+  let pendingFen = '';         // FEN seen on previous scan (stability check)
+  let isEvaluating = false;
+  let mpvList = [];
+  let scanIntervalId = null;
+  let lastGameFenRoot = '';
+  let hudNeedsUpdate = true;
+  let lastDrawnOverlay = null; // { fromSq, toSq, moveType, badgeText } for re-draw guard
+  let isDragging = false;      // true while user is holding a piece
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -38,16 +37,32 @@
       clearInterval(scanIntervalId);
       scanIntervalId = null;
     }
-    if (stockfishWorker) {
-      try { stockfishWorker.terminate(); } catch { /* ignore */ }
-      stockfishWorker = null;
-    }
+    isEngineReady = false;
     const hud = document.getElementById('ichess-hud-status');
     if (hud) hud.remove();
     clearOverlay();
   }
 
-  // Sanitize & Validate FEN string format
+  // ── Drag Detection: freeze evaluation while user is holding a piece ──────────────────
+  document.addEventListener('mousedown', (e) => {
+    const board = getBoardElement();
+    if (board && board.contains(e.target)) {
+      isDragging = true;
+    }
+  }, { passive: true });
+
+  // Release on mouseup or if cursor leaves window (e.g. drag off-screen)
+  document.addEventListener('mouseup', () => { isDragging = false; }, { passive: true });
+  document.addEventListener('mouseleave', () => { isDragging = false; }, { passive: true });
+
+  // Touch support (mobile)
+  document.addEventListener('touchstart', (e) => {
+    const board = getBoardElement();
+    if (board && board.contains(e.target)) isDragging = true;
+  }, { passive: true });
+  document.addEventListener('touchend', () => { isDragging = false; }, { passive: true });
+
+  // ── Sanitize & Validate FEN string format ────────────────────────────────────────
   function sanitizeFen(fen) {
     if (!fen || typeof fen !== 'string') return fen;
     let cleaned = fen.replace(/\s+([wb])\s+(--|-)\s+/gi, ' $1 - ');
@@ -70,38 +85,35 @@
     return cleaned;
   }
 
-  // Load saved settings & listen for messages
+  // Load saved settings & listen for messages from background
   if (isContextValid()) {
     try {
       chrome.storage.local.get({
         showOverlay: true,
         brilliantHunter: true,
-        depth: 6,
-        mistakeInterval: 5,
-        mistakeSeverity: 'inaccuracy'
+        depth: 6
       }, (res) => {
         if (!isContextValid()) return;
-        showOverlay     = res.showOverlay;
+        showOverlay = res.showOverlay;
         brilliantHunter = res.brilliantHunter;
-        targetDepth     = res.depth;
-        mistakeInterval = res.mistakeInterval;
-        mistakeSeverity = res.mistakeSeverity;
-        hudNeedsUpdate  = true;
+        targetDepth = res.depth;
+        hudNeedsUpdate = true;
         updateHudStatus();
+        // Init engine via background
+        initEngine();
       });
 
       chrome.runtime.onMessage.addListener((msg) => {
         if (!isContextValid()) return;
 
+        // ── Settings update from popup ────────────────────────────────────────
         if (msg.type === 'ICHESS_SETTINGS_UPDATE' && msg.config) {
-          showOverlay     = msg.config.showOverlay;
+          showOverlay = msg.config.showOverlay;
           brilliantHunter = msg.config.brilliantHunter;
-          targetDepth     = msg.config.depth;
-          mistakeInterval = msg.config.mistakeInterval;
-          mistakeSeverity = msg.config.mistakeSeverity;
+          targetDepth = msg.config.depth;
 
-          if (stockfishWorker) {
-            sendWorkerCmd(`setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`);
+          if (isEngineReady) {
+            sendEngineCmd(`setoption name MultiPV value ${brilliantHunter ? 5 : 2}`);
           }
 
           hudNeedsUpdate = true;
@@ -111,7 +123,6 @@
           scanBoard();
         } else if (msg.type === 'ICHESS_RESET_GAME') {
           console.log('[iChess Engine] Reset Game triggered');
-          moveCounter = 0;
           lastEvaluatedFen = '';
           isEvaluating = false;
           clearOverlay();
@@ -124,97 +135,84 @@
     }
   }
 
-  function sendWorkerCmd(cmd) {
-    if (!stockfishWorker) return;
-    try {
-      stockfishWorker.postMessage(cmd);
-    } catch (e) {
-      console.error('[iChess Engine] sendWorkerCmd error:', e);
-    }
+  // ── Engine Communication (via Main-World postMessage Bridge) ──────────────────
+
+  function sendEngineCmd(cmd) {
+    // Forward UCI command to Stockfish hosted in main-world.js
+    window.postMessage({ type: 'ICHESS_SF_CMD', cmd }, '*');
   }
 
-  // Direct Chrome Extension Web Worker (Bypasses Chess.com CSP Restrictions)
-  function initWorker() {
-    if (stockfishWorker || isInitializingWorker) return;
-    if (!isContextValid()) {
-      cleanupOnInvalidatedContext();
+  function initEngine() {
+    if (isInitSent || !isContextValid()) return;
+    isInitSent = true; // prevent multiple init floods while Stockfish loads
+
+    const sfUrl = chrome.runtime.getURL('stockfish.js');
+    window.postMessage({ type: 'ICHESS_INIT_ENGINE', sfUrl }, '*');
+
+    // Send initial UCI handshake — queued in main-world if Stockfish not ready yet
+    sendEngineCmd('uci');
+    sendEngineCmd('setoption name Hash value 32');
+    sendEngineCmd(`setoption name MultiPV value ${brilliantHunter ? 5 : 2}`);
+    sendEngineCmd('isready');
+
+    console.log('[iChess Engine] Engine init sent — awaiting Stockfish confirmation...');
+  }
+
+  // Listen for Stockfish lines forwarded back from main-world.js
+  window.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data !== 'object') return;
+    if (event.data.source !== 'ichess-engine') return; // only our engine messages
+
+    if (event.data.type === 'ICHESS_SF_LINE') {
+      const line = event.data.line;
+      // Mark engine ready once Stockfish confirms — triggers scan to start evaluating
+      if (!isEngineReady && (line === 'uciok' || line === 'readyok')) {
+        isEngineReady = true;
+        console.log('[iChess Engine] Engine confirmed ready from Stockfish:', line);
+      }
+      handleStockfishLine(line);
+    }
+  });
+
+  // Processes every line Stockfish sends (forwarded from background)
+  function handleStockfishLine(line) {
+    if (!line) return;
+
+    if (line === 'uciok' || line === 'readyok') {
+      console.log('[iChess Engine] Stockfish ready:', line);
       return;
     }
 
-    isInitializingWorker = true;
-
-    try {
-      const workerUrl = chrome.runtime.getURL('stockfish.js');
-      stockfishWorker = new Worker(workerUrl);
-
-      stockfishWorker.onmessage = (e) => {
-        let line = '';
-        if (typeof e.data === 'string') {
-          line = e.data;
-        } else if (e.data && typeof e.data === 'object') {
-          line = e.data.data || e.data.text || e.data.line || e.data.message || '';
-        }
-
-        if (!line) return;
-
-        if (line === 'uciok' || line === 'readyok') {
-          isWorkerReady = true;
-        }
-
-        if (line.startsWith('info') && line.includes(' score ')) {
-          parseMpvLine(line);
-        } else if (line.startsWith('bestmove')) {
-          const currentFen = getFenState();
-          isEvaluating = false;
-
-          // Discard stale bestmove if position changed during Stockfish search
-          if (currentFen && currentFen !== evaluatingFen) {
-            console.log('[iChess Engine] Discarding stale bestmove (board position changed)');
-            clearOverlay();
-            return;
-          }
-
-          const parts = line.split(' ');
-          const bestMove = parts[1];
-          if (bestMove && bestMove !== '(none)') {
-            console.log('[iChess Engine] Stockfish recommended move:', bestMove);
-            processMoveSelection(bestMove);
-          }
-        }
-      };
-
-      stockfishWorker.onerror = (err) => {
-        console.error('[iChess Engine] Worker error:', err);
-        isEvaluating = false;
-      };
-
-      sendWorkerCmd('uci');
-      sendWorkerCmd('setoption name Hash value 32');
-      sendWorkerCmd(`setoption name MultiPV value ${brilliantHunter || mistakeInterval > 0 ? 5 : 2}`);
-      sendWorkerCmd('isready');
-
-      isInitializingWorker = false;
-      isWorkerReady = true;
-      console.log('[iChess Engine] Stockfish Worker v5.2 (Direct Extension Worker) Ready');
-    } catch (err) {
-      isInitializingWorker = false;
+    if (line.startsWith('info') && line.includes(' score ')) {
+      parseMpvLine(line);
+    } else if (line.startsWith('bestmove')) {
+      const currentFen = getFenState();
       isEvaluating = false;
-      if (err.message && err.message.includes('invalidated')) {
-        cleanupOnInvalidatedContext();
+
+      // Discard if piece positions changed during analysis
+      if (currentFen && currentFen.split(' ')[0] !== evaluatingFen.split(' ')[0]) {
+        console.log('[iChess Engine] Discarding stale bestmove — board moved during analysis');
+        clearOverlay();
         return;
       }
-      console.error('[iChess Engine] Worker init failed:', err);
+
+      const parts = line.split(' ');
+      const bestMove = parts[1];
+      if (bestMove && bestMove !== '(none)') {
+        console.log('[iChess Engine] Stockfish recommended move:', bestMove);
+        processMoveSelection(bestMove);
+      }
     }
   }
 
   function parseMpvLine(line) {
-    const cpMatch   = line.match(/score cp (-?\d+)/);
+    const cpMatch = line.match(/score cp (-?\d+)/);
     const mateMatch = line.match(/score mate (-?\d+)/);
-    const pvMatch   = line.match(/pv\s((?:[a-h][1-8][a-h][1-8][qrbn]?\s*)+)/);
-    const mpvMatch  = line.match(/multipv\s(\d+)/);
+    const pvMatch = line.match(/pv\s((?:[a-h][1-8][a-h][1-8][qrbn]?\s*)+)/);
+    const mpvMatch = line.match(/multipv\s(\d+)/);
 
     if (!pvMatch || !mpvMatch) return;
-    const rank    = parseInt(mpvMatch[1], 10);
+    const rank = parseInt(mpvMatch[1], 10);
     const pvMoves = pvMatch[1].trim().split(/\s+/);
     const cp = cpMatch
       ? parseInt(cpMatch[1], 10)
@@ -241,13 +239,17 @@
 
     let statusText = `Depth ${targetDepth}`;
     if (brilliantHunter) statusText += ' | 🔥 Brilliant Hunter';
-    if (mistakeInterval > 0) statusText += ` | ⚠️ Mistake: 1/${mistakeInterval}`;
 
     hud.innerHTML = `<div class="dot"></div><div>iChess: ${statusText}</div>`;
   }
 
   function getBoardElement() {
-    return document.querySelector('wc-chess-board, chess-board, .board');
+    return (
+      document.querySelector('wc-chess-board') ||
+      document.querySelector('chess-board') ||
+      document.querySelector('.board') ||
+      document.querySelector('[class*="board"]')
+    );
   }
 
   function getFenState() {
@@ -309,9 +311,9 @@
     return null;
   }
 
-  // Multi-layer Active Turn Detector
+  // Multi-layer Active Turn Detector (Computer + Live Online Games)
   function detectActiveTurn(board) {
-    // 1. Check Sidebar Move List (Most reliable)
+    // 1. Check Sidebar Move List (most reliable — works for both computer & live)
     const moveNodes = document.querySelectorAll(
       '.move-node, wc-move-node, [data-ply], .white-moveNode, .black-moveNode'
     );
@@ -336,15 +338,52 @@
       return (moveNodes.length % 2 === 1) ? 'b' : 'w';
     }
 
-    // 2. Check Clock Turn Indicators
-    const whiteClock = document.querySelector('.player-component.white .clock-player-turn, .clock-white.clock-player-turn, .player-tag.white.is-turn, .player-component.bottom.white .clock-player-turn');
-    const blackClock = document.querySelector('.player-component.black .clock-player-turn, .clock-black.clock-player-turn, .player-tag.black.is-turn, .player-component.bottom.black .clock-player-turn');
+    // 2. Live Online Game Clock — wc-clock-component (new Chess.com live UI)
+    const activeClockEl = document.querySelector(
+      'wc-clock-component.clock-bottom.clock-player-turn, ' +
+      'wc-clock-component.clock-top.clock-player-turn'
+    );
+    if (activeClockEl) {
+      const isFlipped = board.classList.contains('flipped') ||
+        board.getAttribute('facing') === 'b' ||
+        board.getAttribute('orientation') === 'black';
+      const isBottom = activeClockEl.classList.contains('clock-bottom');
+      // bottom clock = current player's clock
+      // if board not flipped → white is bottom; if flipped → black is bottom
+      if (isBottom) return isFlipped ? 'b' : 'w';
+      return isFlipped ? 'w' : 'b';
+    }
+
+    // 3. is-your-turn attribute / class (live game indicator)
+    const yourTurnEl = document.querySelector('[class*="is-your-turn"], .your-turn-indicator');
+    if (yourTurnEl) {
+      // figure out which color we are from the board orientation
+      const isFlipped = board.classList.contains('flipped') ||
+        board.getAttribute('facing') === 'b' ||
+        board.getAttribute('orientation') === 'black';
+      return isFlipped ? 'b' : 'w';
+    }
+
+    // 4. Classic Clock Turn Indicators (computer games)
+    const whiteClock = document.querySelector(
+      '.player-component.white .clock-player-turn, ' +
+      '.clock-white.clock-player-turn, ' +
+      '.player-tag.white.is-turn, ' +
+      '.player-component.bottom.white .clock-player-turn'
+    );
+    const blackClock = document.querySelector(
+      '.player-component.black .clock-player-turn, ' +
+      '.clock-black.clock-player-turn, ' +
+      '.player-tag.black.is-turn, ' +
+      '.player-component.bottom.black .clock-player-turn'
+    );
     if (whiteClock) return 'w';
     if (blackClock) return 'b';
 
+    // 5. Fallback: board orientation
     const isFlipped = board.classList.contains('flipped') ||
-                      board.getAttribute('facing') === 'b' ||
-                      board.getAttribute('orientation') === 'black';
+      board.getAttribute('facing') === 'b' ||
+      board.getAttribute('orientation') === 'black';
     return isFlipped ? 'b' : 'w';
   }
 
@@ -357,8 +396,8 @@
     if (!pieces || pieces.length === 0) return null;
 
     const isFlipped = board.classList.contains('flipped') ||
-                      board.getAttribute('facing') === 'b' ||
-                      board.getAttribute('orientation') === 'black';
+      board.getAttribute('facing') === 'b' ||
+      board.getAttribute('orientation') === 'black';
 
     const grid = Array(8).fill(null).map(() => Array(8).fill(null));
 
@@ -393,19 +432,21 @@
     }
 
     const activeTurn = detectActiveTurn(board);
-    return `${fenRows.join('/')} ${activeTurn} KQkq - 0 1`;
+    // Use '-' for castling rights — DOM can't track castling state
+    // KQkq causes chess.js to throw when kings have moved from starting squares
+    return `${fenRows.join('/')} ${activeTurn} - - 0 1`;
   }
 
   function getSquareCoordinates(board, sq) {
     if (!sq || sq.length < 2) return null;
 
-    const rect    = board.getBoundingClientRect();
+    const rect = board.getBoundingClientRect();
     const fileIdx = sq.charCodeAt(0) - 97;
     const rankNum = parseInt(sq[1], 10);
 
     const isFlipped = board.classList.contains('flipped') ||
-                      board.getAttribute('facing') === 'b' ||
-                      board.getAttribute('orientation') === 'black';
+      board.getAttribute('facing') === 'b' ||
+      board.getAttribute('orientation') === 'black';
 
     const col = isFlipped ? (7 - fileIdx) : fileIdx;
     const row = isFlipped ? (rankNum - 1) : (8 - rankNum);
@@ -415,10 +456,10 @@
 
     return {
       x: rect.left + (col + 0.5) * sw,
-      y: rect.top  + (row + 0.5) * sh,
-      leftPct:   (col / 8) * 100,
-      topPct:    (row / 8) * 100,
-      widthPct:  12.5,
+      y: rect.top + (row + 0.5) * sh,
+      leftPct: (col / 8) * 100,
+      topPct: (row / 8) * 100,
+      widthPct: 12.5,
       heightPct: 12.5,
       colNumber: fileIdx + 1,
       rowNumber: rankNum,
@@ -452,11 +493,9 @@
     // Target Highlight & Badges
     const toCoords = getSquareCoordinates(board, toSq);
     if (toCoords) {
-      const cls = moveType === 'brilliant'
-        ? 'ichess-highlight-brilliant'
-        : moveType === 'mistake'
-          ? (mistakeSeverity === 'blunder' ? 'ichess-highlight-blunder' : 'ichess-highlight-mistake')
-          : 'ichess-highlight-to';
+      const cls = moveType === 'opponent'
+        ? 'ichess-highlight-opponent'
+        : 'ichess-highlight-to';
 
       const el = document.createElement('div');
       el.className = `ichess-highlight-box ${cls}`;
@@ -470,11 +509,14 @@
     }
 
     board.appendChild(container);
+    lastDrawnOverlay = { fromSq, toSq, moveType, badgeText };
+    console.log(`[iChess Engine] Overlay drawn: ${fromSq}→${toSq} [${moveType}]`);
   }
 
   function clearOverlay() {
     const el = document.getElementById('ichess-overlay-container');
     if (el) el.remove();
+    lastDrawnOverlay = null;
   }
 
   // Move Selection & Overlay Drawing with Strict Legality Validation
@@ -483,7 +525,7 @@
     if (!fen) return;
 
     const fromSq = defaultBestMove.substring(0, 2);
-    const toSq   = defaultBestMove.substring(2, 4);
+    const toSq = defaultBestMove.substring(2, 4);
 
     // Validate move legality against active FEN position using chess.js
     const ChessCtor = window.Chess || (typeof Chess !== 'undefined' ? Chess : null);
@@ -504,35 +546,40 @@
       }
     }
 
-    moveCounter++;
     let selectedMove = defaultBestMove;
-    let moveType     = 'best';
-    let moveBadge    = '';
+    let moveType = 'best';
+    let moveBadge = '';
 
-    const isMistakeTurn = mistakeInterval > 0 && (moveCounter % mistakeInterval === 0);
-
-    if (isMistakeTurn) {
-      const mm = selectMistakeMove(defaultBestMove);
-      if (mm) {
-        selectedMove = mm;
-        moveType  = 'mistake';
-        moveBadge = mistakeSeverity === 'blunder' ? '?? Blunder'
-                  : mistakeSeverity === 'mistake'  ? '? Mistake'
-                  : '?! Inaccuracy';
-      }
-    } else if (brilliantHunter) {
+    if (brilliantHunter) {
       const b = detectBrilliantSacrifice(fen, defaultBestMove);
       if (b.isSacrifice) {
         selectedMove = b.move;
-        moveType     = 'brilliant';
-        moveBadge    = '!! Brilliant';
+        moveType = 'best';
+        // no badge label — just plain green, no "Brilliant" text
       }
     }
 
     const finalFrom = selectedMove.substring(0, 2);
-    const finalTo   = selectedMove.substring(2, 4);
+    const finalTo = selectedMove.substring(2, 4);
 
-    drawOverlay(finalFrom, finalTo, moveType, moveBadge);
+    // Detect if this is the player's turn or opponent's turn
+    // Board not flipped = player is white; flipped = player is black
+    const board = getBoardElement();
+    const isFlipped = board && (
+      board.classList.contains('flipped') ||
+      board.getAttribute('facing') === 'b' ||
+      board.getAttribute('orientation') === 'black'
+    );
+    const playerColor = isFlipped ? 'b' : 'w';
+    const fenTurn = fen.split(' ')[1]; // 'w' or 'b'
+    const isMyTurn = fenTurn === playerColor;
+
+    if (!isMyTurn) {
+      // Opponent's turn — dimmer overlay so it's less prominent
+      drawOverlay(finalFrom, finalTo, moveType === 'brilliant' ? 'brilliant' : 'opponent', moveBadge);
+    } else {
+      drawOverlay(finalFrom, finalTo, moveType, moveBadge);
+    }
   }
 
   // Brilliant Hunter Sacrifice Scanner
@@ -550,12 +597,12 @@
     }
 
     for (const item of valid) {
-      if (topCp - item.cp > 60)  continue;
-      if (item.cp < -80)         continue;
+      if (topCp - item.cp > 60) continue;
+      if (item.cp < -80) continue;
 
-      const uci  = item.move;
+      const uci = item.move;
       const from = uci.substring(0, 2);
-      const to   = uci.substring(2, 4);
+      const to = uci.substring(2, 4);
 
       if (!game) continue;
 
@@ -563,7 +610,7 @@
       if (!piece || piece.type === 'k' || piece.type === 'p') continue;
 
       const aVal = PIECE_VALUES[piece.type] || 0;
-      const tPc  = game.get(to);
+      const tPc = game.get(to);
       const tVal = tPc ? (PIECE_VALUES[tPc.type] || 0) : 0;
 
       if (tPc && tPc.color !== piece.color && (aVal - tVal >= 2)) {
@@ -586,23 +633,6 @@
     return { move: defaultBest, isSacrifice: false };
   }
 
-  // Mistake Selector
-  function selectMistakeMove(defaultBest) {
-    const valid = mpvList.filter(i => i && i.move && i.move.length >= 4);
-    if (valid.length <= 1) return defaultBest;
-
-    const topCp  = valid[0].cp;
-    const target = mistakeSeverity === 'blunder' ? 450
-                 : mistakeSeverity === 'mistake'  ? 250
-                 : 120;
-
-    for (let i = 1; i < valid.length; i++) {
-      if (topCp - valid[i].cp >= target - 100) return valid[i].move;
-    }
-
-    return valid[1]?.move || defaultBest;
-  }
-
   // Main Scan Loop
   function scanBoard() {
     if (!isContextValid()) {
@@ -610,39 +640,60 @@
       return;
     }
 
-    initWorker();
+    initEngine();
     updateHudStatus();
 
-    if (!stockfishWorker) return;
+    if (!isEngineReady) return;
+
+    // ── Freeze while user is dragging a piece ────────────────────────────────────────────────
+    if (isDragging) return;
 
     const fen = getFenState();
     if (!fen) return;
 
-    // Reset move counter on new match
+    // ── Re-draw guard: overlay was removed by Chess.com DOM mutation ──────────────
+    // If we have a known overlay but the container is gone, re-append it without re-evaluating
+    if (lastDrawnOverlay && !document.getElementById('ichess-overlay-container')) {
+      const { fromSq, toSq, moveType, badgeText } = lastDrawnOverlay;
+      // Only re-draw if the position hasn't changed since last draw
+      if (fen.split(' ')[0] === lastEvaluatedFen.split(' ')[0]) {
+        drawOverlay(fromSq, toSq, moveType, badgeText);
+        return; // overlay restored, skip re-evaluation
+      }
+    }
+
+    // Reset overlay on new match
     const fenRoot = fen.split(' ')[0];
     if (lastGameFenRoot && fenRoot !== lastGameFenRoot && fen.includes('rnbqkbnr/pppppppp')) {
-      moveCounter = 0;
       clearOverlay();
-      console.log('[iChess Engine] New game detected, move counter & overlay reset');
+      console.log('[iChess Engine] New game detected, overlay reset');
     }
     lastGameFenRoot = fenRoot;
 
-    // If board position has changed, update immediately
+    // ── Stability check: only evaluate FEN after it's been stable for 2 scans (~600ms) ────
+    // Prevents triggering on intermediate DOM states during Chess.com move animations
     if (fen !== lastEvaluatedFen) {
+      if (fen !== pendingFen) {
+        // First time seeing this FEN — record it and wait for next scan to confirm
+        pendingFen = fen;
+        return;
+      }
+      // FEN is stable (seen twice) — evaluate it
+      pendingFen = '';
       console.log('[iChess Engine] Evaluating new FEN position:', fen);
       lastEvaluatedFen = fen;
-      evaluatingFen    = fen;
+      evaluatingFen = fen;
 
       if (isEvaluating) {
-        try { sendWorkerCmd('stop'); } catch { /* ignore */ }
+        sendEngineCmd('stop');
       }
 
       isEvaluating = true;
-      mpvList      = [];
+      mpvList = [];
       clearOverlay();
 
-      sendWorkerCmd(`position fen ${fen}`);
-      sendWorkerCmd(`go depth ${targetDepth}`);
+      sendEngineCmd(`position fen ${fen}`);
+      sendEngineCmd(`go depth ${targetDepth}`);
     }
   }
 
