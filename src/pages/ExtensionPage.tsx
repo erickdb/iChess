@@ -1,4 +1,4 @@
-// pages/ExtensionPage.tsx — Chrome Web Store Style Extension Detail & Direct Zip Download Page
+// pages/ExtensionPage.tsx
 
 import { useState } from 'react';
 
@@ -10,211 +10,213 @@ export function ExtensionPage() {
     setTimeout(() => setDownloading(false), 3000);
   }
 
-  const PREVIEWS = [
+  const FEATURES = [
     {
       icon: '💡',
-      title: 'Real-time Overlay Highlight',
-      desc: 'Petunjuk langkah terbaik (Cyan = Asal, Green = Tujuan) langsung di atas papan Chess.com.',
+      title: 'Real-time Overlay',
+      desc: 'Cyan (from) + Green (to) highlights rendered directly over the Chess.com board, updated every 300ms with no noticeable delay.',
       badge: 'Visual Assist',
-      color: 'from-[#00fff5]/20 to-[#00adb5]/10',
-      borderColor: 'border-[#00adb5]/40',
+      accent: '#00adb5',
+      glow: 'rgba(0,173,181,0.15)',
+      border: 'rgba(0,173,181,0.3)',
     },
     {
       icon: '🔥',
-      title: 'Brilliant Hunter Mode (!!)',
-      desc: 'Ngescan 5 jalur MultiPV sekaligus buat nyari pengorbanan perwira taktis ala Mikhail Tal.',
-      badge: 'Super Aggressive',
-      color: 'from-[#ff4b4b]/20 to-[#f97316]/10',
-      borderColor: 'border-[#ff4b4b]/40',
-    },
-    {
-      icon: '⚠️',
-      title: 'Anti-Ban Mistake Generator',
-      desc: 'Sengaja bikin kesalahan kecil tiap N langkah (3/5/7/10) biar akun aman dari deteksi bot.',
-      badge: 'Humanized Play',
-      color: 'from-[#f59e0b]/20 to-[#d97706]/10',
-      borderColor: 'border-[#f59e0b]/40',
-    },
-    {
-      icon: '⚡',
-      title: 'Humanized Auto-Play',
-      desc: 'Klik otomatis perwira pake simulasi pointer event dengan delay reaksi manusia (450ms - 850ms).',
-      badge: 'Auto Clicker',
-      color: 'from-[#22c55e]/20 to-[#16a34a]/10',
-      borderColor: 'border-[#22c55e]/40',
+      title: 'Brilliant Hunter (!!)',
+      desc: 'Scans 5 MultiPV lines simultaneously to detect tactical piece sacrifices and instantly highlights them in red.',
+      badge: 'Aggressive',
+      accent: '#ff4b4b',
+      glow: 'rgba(255,75,75,0.15)',
+      border: 'rgba(255,75,75,0.3)',
     },
   ] as const;
 
   return (
-    <div className="w-full max-w-[1150px] mx-auto px-6 py-10 flex flex-col gap-12 pb-24">
+    <div className="w-full max-w-[1100px] mx-auto px-6 py-12 flex flex-col gap-10 pb-28">
 
-      {/* ── Web Store Navigation Bar ───────────────────────────────── */}
-      <div className="flex items-center gap-4 text-xs font-semibold text-[#64748b] border-b border-[#232c45] pb-4">
-        <span className="text-white font-bold flex items-center gap-1.5 text-sm">
-          <span className="text-lg">🛍️</span> iChess Web Store
-        </span>
-        <span>›</span>
-        <span>Ekstensi</span>
-        <span>›</span>
-        <span>Produktivitas &amp; Game</span>
-        <span>›</span>
-        <span className="text-[#00adb5] font-bold">iChess Assistant</span>
-      </div>
+      {/* ── Hero Card ──────────────────────────────────────────────────── */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 bg-[rgba(19,25,41,0.8)] border border-[#232c45] rounded-3xl p-8 backdrop-blur-xl shadow-[0_24px_60px_rgba(0,0,0,0.5)]">
 
-      {/* ── Hero Header (Chrome Web Store Style) ────────────────────── */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 bg-[rgba(26,32,51,0.6)] border border-[#232c45] rounded-3xl p-8 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.4)]">
-        
-        {/* Left Info */}
         <div className="flex flex-col sm:flex-row items-start gap-6">
-          {/* Extension App Icon */}
-          <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[#00fff5] via-[#00adb5] to-[#005f63] flex items-center justify-center text-4xl shadow-[0_8px_30px_rgba(0,173,181,0.4)] border-2 border-white/20 flex-shrink-0">
+          {/* Icon */}
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#00fff5] via-[#00adb5] to-[#005f63] flex items-center justify-center text-4xl shadow-[0_8px_30px_rgba(0,173,181,0.35)] border border-white/10 flex-shrink-0">
             ♟️
           </div>
 
-          <div className="flex flex-col gap-2">
-            <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-              iChess Assistant &amp; Auto-Player
+          <div className="flex flex-col gap-2.5">
+            <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight m-0">
+              iChess Assistant
             </h1>
 
-            {/* Badges / Meta */}
-            <div className="flex flex-wrap items-center gap-3 text-xs text-[#94a3b8]">
-              <span className="text-[#00adb5] font-bold underline">iChess Inc.</span>
-              <span>•</span>
-              <span className="flex items-center gap-1 text-[#f59e0b] font-extrabold">
-                ★ 4.9 <span className="text-[#64748b] font-normal">(1.420 rating)</span>
-              </span>
-              <span>•</span>
-              <span className="bg-[#1a2033] border border-[#232c45] px-2.5 py-0.5 rounded-md font-semibold text-white">
-                Ekstensi Chrome
-              </span>
-              <span>•</span>
-              <span className="text-white font-semibold">50.000+ pengguna</span>
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="text-[#00adb5] font-bold">iChess Inc.</span>
+              <span className="text-[#334155]">•</span>
+              {['Chrome Extension', 'Manifest V3', 'Stockfish 18'].map(tag => (
+                <span key={tag} className="bg-[#1a2033] border border-[#2d3748] px-2.5 py-0.5 rounded-md font-semibold text-[#94a3b8]">
+                  {tag}
+                </span>
+              ))}
             </div>
 
-            <p className="text-xs text-[#64748b] mt-1 max-w-[550px]">
-              Mesin pembantu Stockfish 18 real-time untuk Chess.com. Dilengkapi visual overlay glowing, mode Brilliant Hunter, dan Auto-Play aman.
+            <p className="text-sm text-[#64748b] leading-relaxed m-0 max-w-[520px]">
+              Stockfish 18 engine running directly in your browser — reads the Chess.com board in real-time and displays the best move as a glowing visual overlay on top of the board.
             </p>
           </div>
         </div>
 
-        {/* Right Download Action Button (Big Blue Chrome Store Button) */}
-        <div className="flex flex-col items-stretch lg:items-end gap-2 w-full lg:w-auto">
+        {/* Download CTA */}
+        <div className="flex flex-col items-stretch lg:items-end gap-2 w-full lg:w-auto flex-shrink-0">
           <a
             href="/ichess-extension.zip"
             download="ichess-extension.zip"
             onClick={handleDownload}
-            className="
-              inline-flex items-center justify-center gap-3
-              bg-gradient-to-r from-[#2563eb] to-[#1d4ed8]
-              hover:from-[#1d4ed8] hover:to-[#1e40af]
-              text-white font-extrabold text-[15px] px-8 py-4 rounded-2xl
-              shadow-[0_8px_24px_rgba(37,99,235,0.4)]
-              transition-all duration-200 hover:scale-105 active:scale-95
-              no-underline cursor-pointer border-0
-            "
+            className="inline-flex items-center justify-center gap-2.5 bg-gradient-to-r from-[#2563eb] to-[#1d4ed8] hover:from-[#1d4ed8] hover:to-[#1e40af] text-white font-extrabold text-sm px-8 py-4 rounded-2xl shadow-[0_8px_24px_rgba(37,99,235,0.35)] transition-all duration-200 hover:scale-[1.03] active:scale-95 no-underline cursor-pointer border-0 whitespace-nowrap"
           >
-            <span className="text-xl">📥</span>
-            <span>{downloading ? 'Mengunduh Zip...' : 'Download Extension (.zip)'}</span>
+            <span className="text-lg">📥</span>
+            <span>{downloading ? 'Downloading...' : 'Download Extension'}</span>
           </a>
-
-          <span className="text-[11px] text-[#64748b] text-center lg:text-right">
-            File `.zip` siap diekstrak &amp; dipasang di Chrome
+          <span className="text-[11px] text-[#475569] text-center lg:text-right">
+            .zip · extract before installing
           </span>
         </div>
       </div>
 
-      {/* ── Previews / Screenshots Carousel Showcase ───────────────── */}
-      <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <span>🖼️</span> Pratinjau Tampilan &amp; Fitur Utama
-        </h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {PREVIEWS.map(({ icon, title, desc, badge, color, borderColor }) => (
-            <div
-              key={title}
-              className={`glass-card p-5 flex flex-col justify-between gap-4 border bg-gradient-to-b ${color} ${borderColor} transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_16px_36px_rgba(0,0,0,0.4)]`}
-            >
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-3xl">{icon}</span>
-                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-black/40 text-white border border-white/10">
-                    {badge}
-                  </span>
-                </div>
-                <h3 className="text-sm font-bold text-white m-0">{title}</h3>
-                <p className="text-xs text-[#94a3b8] leading-relaxed m-0">{desc}</p>
-              </div>
-
-              <div className="pt-3 border-t border-white/10 text-[10px] text-white/50 font-mono">
-                ✦ Active Module
-              </div>
+      {/* ── Feature Cards ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {FEATURES.map(({ icon, title, desc, badge, accent, glow, border }) => (
+          <div
+            key={title}
+            style={{ background: `linear-gradient(135deg, ${glow}, transparent)`, borderColor: border }}
+            className="glass-card border p-6 flex flex-col gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-3xl leading-none">{icon}</span>
+              <span
+                style={{ color: accent, borderColor: `${accent}40`, background: `${accent}15` }}
+                className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-md border tracking-wide flex-shrink-0"
+              >
+                {badge}
+              </span>
             </div>
-          ))}
-        </div>
+            <div>
+              <h3 className="text-sm font-bold text-white mb-1.5 m-0">{title}</h3>
+              <p className="text-xs text-[#94a3b8] leading-relaxed m-0">{desc}</p>
+            </div>
+            <div className="pt-3 border-t border-white/5 text-[10px] text-white/30 font-mono">
+              ✦ Active Module
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* ── Summary & Installation Steps ───────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left 2 Cols: Summary Description */}
-        <div className="lg:col-span-2 glass-card p-7 flex flex-col gap-5">
-          <h2 className="text-lg font-bold text-white border-b border-[#232c45] pb-3">
-            Ringkasan &amp; Deskripsi Ekstensi
+      {/* ── Bottom Grid: About + Install ──────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+
+        {/* About */}
+        <div className="glass-card p-7 flex flex-col gap-6">
+          <h2 className="text-base font-bold text-white border-b border-[#1e2840] pb-3 m-0">
+            About This Extension
           </h2>
 
-          <div className="text-xs text-[#94a3b8] leading-relaxed flex flex-col gap-3">
-            <p>
-              <strong className="text-white">iChess Assistant</strong> adalah ekstensi browser berteknologi tinggi yang dirancang untuk membaca papan catur Chess.com secara real-time dan memberikan analisis taktis tercepat bertenaga Stockfish 18 WebWorker.
+          <div className="flex flex-col gap-4 text-xs text-[#94a3b8] leading-relaxed">
+            <p className="m-0">
+              <strong className="text-white">iChess Assistant</strong> injects Stockfish 18 directly into Chess.com via a WebWorker.
+              Every 300ms, the extension reads piece positions from the DOM, builds a FEN string, and sends it to the engine —
+              the best move appears as a glowing overlay on top of the board without any page refresh.
             </p>
-            <p>
-              Ekstensi ini dirancang dengan arsitektur Manifest V3 terbaru yang kompatibel dengan Google Chrome, Brave Browser, Microsoft Edge, dan Opera.
+            <p className="m-0">
+              Built on a <strong className="text-white">dual-world architecture</strong>: an isolated content script handles core logic,
+              while a MAIN world injector bypasses Chess.com's CSP to spawn the WebWorker.
+              Compatible with <strong className="text-white">Chrome, Brave, Edge, and Opera</strong>.
             </p>
 
-            <h3 className="text-sm font-bold text-white mt-2">Fitur Unggulan Ekstensi:</h3>
-            <ul className="list-disc list-inside space-y-1 text-[#cbd5e1]">
-              <li><strong>Visual Overlay Guidance</strong>: Menampilkan petunjuk petak asal (Cyan) dan tujuan (Hijau) langsung di atas papan catur.</li>
-              <li><strong>🔥 Brilliant Hunter Mode</strong>: Memindai 5 variasi MultiPV untuk mendeteksi taktik pengorbanan perwira (<code className="text-[#ff4b4b]">!!</code>).</li>
-              <li><strong>⚠️ Anti-Ban Mistake Simulator</strong>: Fitur keamanan untuk menjadwalkan kesalahan manusiawi (Inaccuracy, Mistake, Blunder) setiap N langkah agar akun terlindungi dari sistem anti-cheat.</li>
-              <li><strong>🎛️ Dynamic Engine Depth</strong>: Bebas mengatur tingkat kedalaman Stockfish dari Depth 6 hingga Depth 24.</li>
-            </ul>
+            <div className="flex flex-col gap-2 mt-1">
+              <h3 className="text-xs font-bold text-white m-0">Features:</h3>
+              {[
+                { color: '#00adb5', label: 'Visual Overlay', desc: 'Cyan + Green highlights rendered directly on the board with pulse animation, always above Chess.com UI.' },
+                { color: '#ff4b4b', label: 'Brilliant Hunter', desc: 'Detects tactical piece sacrifices across 5 MultiPV lines and auto-highlights them in red.' },
+                { color: '#f59e0b', label: 'Depth Control', desc: 'Set Stockfish depth from 6 (~1350 ELO) to 24 (~3500 ELO) directly from the popup.' },
+                { color: '#64748b', label: 'Stability Check', desc: 'FEN must be stable for 2 consecutive scans before evaluation — prevents false triggers during Chess.com move animations.' },
+              ].map(f => (
+                <div key={f.label} className="flex gap-2.5">
+                  <span style={{ color: f.color }} className="mt-0.5 flex-shrink-0">▸</span>
+                  <span><strong className="text-white">{f.label}</strong> — {f.desc}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Tech Stack */}
+            <div className="bg-[#080c14] border border-[#1e2840] rounded-xl p-4 font-mono text-[10.5px] text-[#475569] mt-1">
+              <span className="text-[#00adb5]"># Tech Stack</span><br />
+              <span className="text-[#334155]">Engine  </span><span className="text-[#94a3b8]">: Stockfish 18 (WASM WebWorker)</span><br />
+              <span className="text-[#334155]">Parser  </span><span className="text-[#94a3b8]">: chess.js — FEN validation &amp; legality check</span><br />
+              <span className="text-[#334155]">Scan    </span><span className="text-[#94a3b8]">: setInterval every 300ms</span><br />
+              <span className="text-[#334155]">Manifest</span><span className="text-[#94a3b8]">: V3 — Service Worker + dual content script</span>
+            </div>
           </div>
         </div>
 
-        {/* Right 1 Col: Quick Install Guide */}
-        <div className="glass-card p-7 flex flex-col gap-5 border-[#00adb5]/30">
-          <h2 className="text-lg font-bold text-white border-b border-[#232c45] pb-3">
-            ⚡ Cara Install Zip (3 Langkah)
+        {/* Install Guide */}
+        <div className="glass-card p-7 flex flex-col gap-6 border-[#00adb5]/20">
+          <h2 className="text-base font-bold text-white border-b border-[#1e2840] pb-3 m-0">
+            ⚡ How to Install
           </h2>
 
-          <div className="flex flex-col gap-4 text-xs">
+          <div className="flex flex-col gap-6 text-xs">
+
+            {/* Step 1 */}
             <div className="flex gap-3">
-              <span className="w-6 h-6 rounded-full bg-[#00adb5]/20 text-[#00adb5] font-black flex items-center justify-center flex-shrink-0">
-                1
-              </span>
-              <div>
-                <strong className="text-white block mb-0.5">Download File Zip</strong>
-                <span className="text-[#94a3b8]">Klik tombol <code className="text-[#00adb5]">Download Extension (.zip)</code> di atas lalu ekstrak file zip tersebut di laptop kamu.</span>
+              <span className="w-6 h-6 rounded-full bg-[#00adb5]/20 text-[#00adb5] font-black text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
+              <div className="flex flex-col gap-2">
+                <strong className="text-white text-[13px]">Download &amp; Extract ZIP</strong>
+                <span className="text-[#94a3b8]">
+                  Click <strong className="text-white">Download Extension</strong> above.
+                  Once done, right-click the file → <strong className="text-white">Extract All...</strong> and choose a destination.
+                </span>
+                <div className="bg-[#080c14] border border-[#1e2840] rounded-lg px-3 py-2 font-mono text-[10px] text-[#00adb5]">
+                  📂 C:\Users\<span className="text-white">YourName</span>\Downloads\ichess-extension\
+                </div>
+                <span className="text-[#475569] text-[11px]">
+                  ⚠️ Make sure <code className="text-white bg-white/5 px-1 rounded">manifest.json</code> is directly inside the folder, not nested in a subfolder.
+                </span>
               </div>
             </div>
 
+            {/* Step 2 */}
             <div className="flex gap-3">
-              <span className="w-6 h-6 rounded-full bg-[#00adb5]/20 text-[#00adb5] font-black flex items-center justify-center flex-shrink-0">
-                2
-              </span>
-              <div>
-                <strong className="text-white block mb-0.5">Buka chrome://extensions</strong>
-                <span className="text-[#94a3b8]">Buka tab baru di browser, ketik <code className="text-white">chrome://extensions</code> lalu nyalakan sakelar <strong>Developer mode</strong> di pojok kanan atas.</span>
+              <span className="w-6 h-6 rounded-full bg-[#00adb5]/20 text-[#00adb5] font-black text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
+              <div className="flex flex-col gap-2">
+                <strong className="text-white text-[13px]">Open chrome://extensions</strong>
+                <span className="text-[#94a3b8]">Open a new tab and type this in the address bar:</span>
+                <div className="bg-[#080c14] border border-[#1e2840] rounded-lg px-3 py-2 font-mono text-[10px] text-white select-all">
+                  chrome://extensions
+                </div>
+                <span className="text-[#94a3b8]">Enable the <strong className="text-white">Developer mode</strong> toggle in the top-right corner.</span>
               </div>
             </div>
 
+            {/* Step 3 */}
             <div className="flex gap-3">
-              <span className="w-6 h-6 rounded-full bg-[#00adb5]/20 text-[#00adb5] font-black flex items-center justify-center flex-shrink-0">
-                3
-              </span>
-              <div>
-                <strong className="text-white block mb-0.5">Load Unpacked</strong>
-                <span className="text-[#94a3b8]">Klik tombol <strong>Load unpacked</strong> di kiri atas, lalu pilih folder ekstensi hasil ekstrak tadi. Selesai!</span>
+              <span className="w-6 h-6 rounded-full bg-[#00adb5]/20 text-[#00adb5] font-black text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
+              <div className="flex flex-col gap-2">
+                <strong className="text-white text-[13px]">Load Unpacked</strong>
+                <span className="text-[#94a3b8]">Click <strong className="text-white">Load unpacked</strong> in the top-left, then navigate to your extracted folder:</span>
+                <div className="bg-[#080c14] border border-[#1e2840] rounded-lg px-3 py-2 font-mono text-[10px] text-[#00adb5]">
+                  📂 ...\ichess-extension\
+                </div>
+                <span className="text-[#94a3b8]">Click <strong className="text-white">Select Folder</strong>. The extension is now active.</span>
+              </div>
+            </div>
+
+            {/* Step 4 */}
+            <div className="flex gap-3">
+              <span className="w-6 h-6 rounded-full bg-[#22c55e]/20 text-[#22c55e] font-black text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">✓</span>
+              <div className="flex flex-col gap-1.5">
+                <strong className="text-white text-[13px]">Open Chess.com &amp; Play</strong>
+                <span className="text-[#94a3b8]">
+                  Go to <code className="text-white bg-white/5 px-1 rounded">chess.com/play</code>.
+                  The iChess HUD appears in the bottom-right corner — overlay activates automatically on your turn.
+                </span>
               </div>
             </div>
           </div>
@@ -223,12 +225,11 @@ export function ExtensionPage() {
             href="/ichess-extension.zip"
             download="ichess-extension.zip"
             onClick={handleDownload}
-            className="mt-2 w-full py-3 rounded-xl font-extrabold text-xs text-center bg-gradient-to-r from-[#2563eb] to-[#1d4ed8] text-white no-underline shadow-lg hover:brightness-110 transition-all cursor-pointer border-0"
+            className="w-full py-3.5 rounded-xl font-extrabold text-sm text-center bg-gradient-to-r from-[#2563eb] to-[#1d4ed8] text-white no-underline shadow-lg hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer border-0 block"
           >
-            📥 Unduh File Zip Ekstensi Now
+            📥 Download ichess-extension.zip
           </a>
         </div>
-
       </div>
 
     </div>
