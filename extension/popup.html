@@ -53,14 +53,15 @@
       gap: 6px;
       transition: all 0.15s ease;
     }
-    .btn-reset {
-      background: #1e293b;
-      color: #cbd5e1;
-      border: 1px solid #334155;
+    .btn-rescan {
+      background: #131929;
+      color: #00adb5;
+      border: 1px solid rgba(0,173,181,0.4);
     }
-    .btn-reset:hover {
-      background: #334155;
+    .btn-rescan:hover {
+      background: rgba(0,173,181,0.12);
       color: #ffffff;
+      border-color: #00adb5;
     }
     .section {
       display: flex;
@@ -139,9 +140,9 @@
     <div class="badge">ASSIST v4.2</div>
   </div>
 
-  <!-- Action Button: Reset Game -->
+  <!-- Action Button: Force Rescan -->
   <div class="action-buttons">
-    <button id="btnResetGame" class="btn btn-reset">🔄 Reset Game / Rematch</button>
+    <button id="btnForceRescan" class="btn btn-rescan">⚡ Force Rescan</button>
   </div>
 
   <div class="section">
@@ -170,11 +171,17 @@
     <div>
       <div class="label-title">Calculated Depth (Strength)</div>
       <select id="depthSelect">
-        <option value="6" selected>Depth 6 — Beginner (~1350 ELO)</option>
-        <option value="10">Depth 10 — Candidate Master (~1850 ELO)</option>
-        <option value="12">Depth 12 — Expert (~2100 ELO)</option>
-        <option value="16">Depth 16 — Grandmaster (~2700 ELO)</option>
-        <option value="20">Depth 20 — Engine God (~3200 ELO)</option>
+        <option value="2">Depth 2  — Casual (~800 ELO)</option>
+        <option value="4">Depth 4  — Beginner (~1000 ELO)</option>
+        <option value="6" selected>Depth 6  — Club Player (~1350 ELO)</option>
+        <option value="8">Depth 8  — Advanced Club (~1600 ELO)</option>
+        <option value="10">Depth 10 — Expert (~1850 ELO)</option>
+        <option value="12">Depth 12 — Candidate Master (~2100 ELO)</option>
+        <option value="14">Depth 14 — FIDE Master (~2300 ELO)</option>
+        <option value="16">Depth 16 — International Master (~2450 ELO)</option>
+        <option value="18">Depth 18 — Grandmaster (~2600 ELO)</option>
+        <option value="20">Depth 20 — Super GM (~2800 ELO)</option>
+        <option value="22">Depth 22 — Engine Elite (~3000 ELO)</option>
         <option value="24">Depth 24 — Maximum Depth (~3500 ELO)</option>
       </select>
     </div>

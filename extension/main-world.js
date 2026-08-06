@@ -4,7 +4,12 @@
 (function () {
   'use strict';
 
-  console.log('[iChess Main-World] v5.0 Initializing — Board Interceptor + Engine Host');
+  // Shared debug flag with content.js — toggle: __iChess.debug = true
+  window.__iChess = window.__iChess || { debug: false };
+  const log   = (...a) => window.__iChess.debug && console.log(...a);
+  const error = (...a) => window.__iChess.debug && console.error(...a);
+
+  log('[iChess Main-World] v5.0 Initializing — Board Interceptor + Engine Host');
 
   window.__iChessBoardInstance = null;
   window.__iChessGameController = null;
@@ -15,12 +20,12 @@
   if (origDefine) {
     window.customElements.define = function (name, constructor, options) {
       if (name === 'wc-chess-board' || name === 'chess-board') {
-        console.log('[iChess Main-World] Intercepted wc-chess-board customElement definition');
+        log('[iChess Main-World] Intercepted wc-chess-board customElement definition');
         const origConnected = constructor.prototype.connectedCallback;
         constructor.prototype.connectedCallback = function () {
           window.__iChessBoardInstance = this;
           if (this.game) window.__iChessGameController = this.game;
-          console.log('[iChess Main-World] Captured active wc-chess-board instance & game controller');
+          log('[iChess Main-World] Captured active wc-chess-board instance & game controller');
           return origConnected ? origConnected.apply(this, arguments) : undefined;
         };
       }
@@ -47,7 +52,7 @@
     if (sfWorker || sfLoading) return;
     sfLoading = true;
 
-    console.log('[iChess Main-World] Initializing Stockfish from:', sfUrl);
+    log('[iChess Main-World] Initializing Stockfish from:', sfUrl);
 
     // fetch+blob: blob:https://www.chess.com/... satisfies worker-src CSP
     fetch(sfUrl)
@@ -73,7 +78,7 @@
             blobRevoked = true;
             sfReady = true;
             sfLoading = false;
-            console.log('[iChess Main-World] Stockfish engine ready:', line);
+            log('[iChess Main-World] Stockfish engine ready:', line);
           }
 
           // Forward every Stockfish line to content.js
@@ -81,18 +86,18 @@
         };
 
         sfWorker.onerror = (err) => {
-          console.error('[iChess Main-World] Stockfish worker error:', err.message);
+          error('[iChess Main-World] Stockfish worker error:', err.message);
           sfWorker = null;
           sfReady = false;
           sfLoading = false;
         };
 
-        console.log('[iChess Main-World] Stockfish worker spawned — flushing', cmdQueue.length, 'queued commands');
+        log('[iChess Main-World] Stockfish worker spawned — flushing', cmdQueue.length, 'queued commands');
         // Flush any UCI commands that arrived while we were loading
         flushQueue();
       })
       .catch(err => {
-        console.error('[iChess Main-World] Failed to load Stockfish:', err);
+        error('[iChess Main-World] Failed to load Stockfish:', err);
         sfWorker = null;
         sfLoading = false;
       });
@@ -103,12 +108,12 @@
       try {
         sfWorker.postMessage(cmd);
       } catch (e) {
-        console.error('[iChess Main-World] sendToEngine error:', e);
+        error('[iChess Main-World] sendToEngine error:', e);
       }
     } else {
       // Worker not ready yet — queue the command
       cmdQueue.push(cmd);
-      console.log('[iChess Main-World] Engine loading, queued cmd:', cmd);
+      log('[iChess Main-World] Engine loading, queued cmd:', cmd);
     }
   }
 

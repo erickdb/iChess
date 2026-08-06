@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toggleOverlay    = document.getElementById('toggleOverlay');
   const toggleBrilliant  = document.getElementById('toggleBrilliant');
   const depthSelect      = document.getElementById('depthSelect');
-  const btnResetGame     = document.getElementById('btnResetGame');
+  const btnForceRescan   = document.getElementById('btnForceRescan');
 
   const settings = await chrome.storage.local.get({
     showOverlay: true,
@@ -39,11 +39,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   toggleBrilliant.addEventListener('change', syncSettings);
   depthSelect.addEventListener('change', syncSettings);
 
-  if (btnResetGame) {
-    btnResetGame.addEventListener('click', () => {
-      sendTabMessage({ type: 'ICHESS_RESET_GAME' });
-      btnResetGame.innerText = '✅ Reset Done';
-      setTimeout(() => { btnResetGame.innerText = '🔄 Reset Game / Rematch'; }, 1500);
+  if (btnForceRescan) {
+    btnForceRescan.addEventListener('click', () => {
+      sendTabMessage({ type: 'ICHESS_FORCE_RESCAN' });
+      btnForceRescan.innerText = '✓ Rescanning...';
+      setTimeout(() => { btnForceRescan.innerText = '⚡ Force Rescan'; }, 1500);
     });
   }
 });

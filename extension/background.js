@@ -3,7 +3,12 @@
 
 'use strict';
 
-console.log('[iChess BG] Background service worker started');
+// Debug flag for service worker — toggle from BG DevTools: __iChessBg.debug = true
+self.__iChessBg = self.__iChessBg || { debug: false };
+const log   = (...a) => self.__iChessBg.debug && console.log(...a);
+const error = (...a) => self.__iChessBg.debug && console.error(...a);
+
+log('[iChess BG] Background service worker started');
 
 let stockfishWorker = null;
 let activeTabId = null;
@@ -38,13 +43,13 @@ function getEngine() {
     };
 
     stockfishWorker.onerror = (err) => {
-      console.error('[iChess BG] Stockfish worker error:', err.message);
+      error('[iChess BG] Stockfish worker error:', err.message);
       stockfishWorker = null; // allow re-init on next command
     };
 
-    console.log('[iChess BG] Stockfish worker created successfully');
+    log('[iChess BG] Stockfish worker created successfully');
   } catch (err) {
-    console.error('[iChess BG] Failed to create Stockfish worker:', err);
+    error('[iChess BG] Failed to create Stockfish worker:', err);
   }
 
   return stockfishWorker;
@@ -63,15 +68,15 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       try {
         engine.postMessage(msg.cmd);
       } catch (err) {
-        console.error('[iChess BG] postMessage failed:', err);
+        error('[iChess BG] postMessage failed:', err);
         stockfishWorker = null; // force re-init
       }
     }
     return false;
   }
 
-  // Popup → background: relay settings update to tab
-  if (msg.type === 'ICHESS_SETTINGS_UPDATE' || msg.type === 'ICHESS_RESET_GAME') {
+  // Popup → background: relay to active tab
+  if (msg.type === 'ICHESS_SETTINGS_UPDATE' || msg.type === 'ICHESS_FORCE_RESCAN') {
     if (activeTabId !== null) {
       chrome.tabs.sendMessage(activeTabId, msg).catch(() => {});
     }

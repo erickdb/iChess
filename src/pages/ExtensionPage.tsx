@@ -135,7 +135,7 @@ export function ExtensionPage() {
               {[
                 { color: '#00adb5', label: 'Visual Overlay', desc: 'Cyan + Green highlights rendered directly on the board with pulse animation, always above Chess.com UI.' },
                 { color: '#ff4b4b', label: 'Brilliant Hunter', desc: 'Detects tactical piece sacrifices across 5 MultiPV lines and auto-highlights them in red.' },
-                { color: '#f59e0b', label: 'Depth Control', desc: 'Set Stockfish depth from 6 (~1350 ELO) to 24 (~3500 ELO) directly from the popup.' },
+                { color: '#f59e0b', label: 'Depth Control', desc: 'Set Stockfish depth from 2 (~800 ELO) to 24 (~3500 ELO) in steps of 2 — all 12 levels available directly from the popup.' },
                 { color: '#64748b', label: 'Stability Check', desc: 'FEN must be stable for 2 consecutive scans before evaluation — prevents false triggers during Chess.com move animations.' },
               ].map(f => (
                 <div key={f.label} className="flex gap-2.5">

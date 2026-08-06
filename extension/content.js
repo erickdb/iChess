@@ -3,24 +3,32 @@
 (function () {
   'use strict';
 
-  console.log('[iChess Engine] Content Script v5.1 (Main-World Engine Bridge) initialized');
+  // ── Debug flag — toggle from DevTools: __iChess.debug = true ─────────────
+  window.__iChess = window.__iChess || { debug: false };
+  const log  = (...a) => window.__iChess.debug && console.log(...a);
+  const warn = (...a) => window.__iChess.debug && console.warn(...a);
+
+  log('[iChess Engine] Content Script v5.1 (Main-World Engine Bridge) initialized');
 
   let showOverlay = true;
   let brilliantHunter = true;
   let targetDepth = 6;
 
-  let isEngineReady = false;  // true once Stockfish confirms readyok
-  let isInitSent = false;     // true once initEngine() has been called once
+  let isEngineReady = false;   // true once Stockfish confirms readyok
+  let isInitSent = false;      // true once initEngine() has been called once
   let lastEvaluatedFen = '';
   let evaluatingFen = '';
-  let pendingFen = '';         // FEN seen on previous scan (stability check)
+  let pendingFen = '';          // FEN seen on previous scan (stability check)
   let isEvaluating = false;
+  let stopFlushPending = false; // true = stop was sent, next bestmove is the flush — discard it
+  let pendingEvalFen = null;    // queued FEN to evaluate after stop flush arrives
   let mpvList = [];
   let scanIntervalId = null;
   let lastGameFenRoot = '';
   let hudNeedsUpdate = true;
   let lastDrawnOverlay = null; // { fromSq, toSq, moveType, badgeText } for re-draw guard
   let isDragging = false;      // true while user is holding a piece
+  let forceNextScan = false;   // true = skip stability check on next scan (after Force Rescan)
 
   const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -118,16 +126,24 @@
 
           hudNeedsUpdate = true;
           updateHudStatus();
+          syncPanelFromState();
           if (!showOverlay) clearOverlay();
           lastEvaluatedFen = '';
           scanBoard();
-        } else if (msg.type === 'ICHESS_RESET_GAME') {
-          console.log('[iChess Engine] Reset Game triggered');
+        } else if (msg.type === 'ICHESS_FORCE_RESCAN') {
+          // Hard reset all eval state and force a fresh scan immediately
+          log('[iChess Engine] ⚡ Force Rescan triggered');
+          if (isEvaluating) sendEngineCmd('stop');
+          isEvaluating     = false;
+          stopFlushPending = false;
+          pendingEvalFen   = null;
           lastEvaluatedFen = '';
-          isEvaluating = false;
+          evaluatingFen    = '';
+          pendingFen       = '';
+          mpvList          = [];
+          forceNextScan    = true; // skip stability check on next scan
           clearOverlay();
-          window.postMessage({ type: 'ICHESS_MAIN_RESET_GAME' }, '*');
-          setTimeout(scanBoard, 300);
+          setTimeout(scanBoard, 100);
         }
       });
     } catch {
@@ -155,7 +171,7 @@
     sendEngineCmd(`setoption name MultiPV value ${brilliantHunter ? 5 : 2}`);
     sendEngineCmd('isready');
 
-    console.log('[iChess Engine] Engine init sent — awaiting Stockfish confirmation...');
+    log('[iChess Engine] Engine init sent — awaiting Stockfish confirmation...');
   }
 
   // Listen for Stockfish lines forwarded back from main-world.js
@@ -168,38 +184,65 @@
       // Mark engine ready once Stockfish confirms — triggers scan to start evaluating
       if (!isEngineReady && (line === 'uciok' || line === 'readyok')) {
         isEngineReady = true;
-        console.log('[iChess Engine] Engine confirmed ready from Stockfish:', line);
+        log('[iChess Engine] Engine confirmed ready from Stockfish:', line);
       }
       handleStockfishLine(line);
     }
   });
 
-  // Processes every line Stockfish sends (forwarded from background)
+  // ── Helper: kick off a fresh Stockfish search ─────────────────────────────
+  function startEval(fen) {
+    lastEvaluatedFen = fen;
+    evaluatingFen    = fen;
+    isEvaluating     = true;
+    mpvList          = [];
+    clearOverlay();
+    sendEngineCmd(`position fen ${fen}`);
+    sendEngineCmd(`go depth ${targetDepth}`);
+    log(`[iChess Engine] ▶ Eval started depth=${targetDepth} | FEN:`, fen);
+  }
+
+  // Processes every line Stockfish sends (forwarded from main-world)
   function handleStockfishLine(line) {
     if (!line) return;
 
     if (line === 'uciok' || line === 'readyok') {
-      console.log('[iChess Engine] Stockfish ready:', line);
+      log('[iChess Engine] Stockfish ready:', line);
       return;
     }
 
     if (line.startsWith('info') && line.includes(' score ')) {
-      parseMpvLine(line);
+      // Only accumulate info lines if they belong to the current active search
+      if (!stopFlushPending) parseMpvLine(line);
+
     } else if (line.startsWith('bestmove')) {
-      const currentFen = getFenState();
       isEvaluating = false;
 
-      // Discard if piece positions changed during analysis
+      // ── Stop-flush: this bestmove is the leftover from a stopped search ──
+      // We already queued a new FEN → discard this result, start the real eval
+      if (stopFlushPending) {
+        stopFlushPending = false;
+        const fen = pendingEvalFen;
+        pendingEvalFen = null;
+        if (fen) {
+          log('[iChess Engine] ✓ Stop flush received — starting pending eval');
+          startEval(fen);
+        }
+        return; // ← discard the stale bestmove
+      }
+
+      // ── Normal path: verify board hasn't drifted during long analysis ────
+      const currentFen = getFenState();
       if (currentFen && currentFen.split(' ')[0] !== evaluatingFen.split(' ')[0]) {
-        console.log('[iChess Engine] Discarding stale bestmove — board moved during analysis');
+        log('[iChess Engine] Discarding stale bestmove — board moved during analysis');
         clearOverlay();
         return;
       }
 
-      const parts = line.split(' ');
+      const parts    = line.split(' ');
       const bestMove = parts[1];
       if (bestMove && bestMove !== '(none)') {
-        console.log('[iChess Engine] Stockfish recommended move:', bestMove);
+        log('[iChess Engine] ✓ Best move:', bestMove);
         processMoveSelection(bestMove);
       }
     }
@@ -233,13 +276,25 @@
       hud = document.createElement('div');
       hud.id = 'ichess-hud-status';
       document.body.appendChild(hud);
+
+      // Click → toggle the in-page settings panel (ignore if drag occurred)
+      hud.addEventListener('click', () => {
+        if (hud._ichessDragged && hud._ichessDragged()) return;
+        const panel = document.getElementById('ichess-panel');
+        if (!panel) {
+          createSettingsPanel();
+        } else {
+          panel.style.display = (panel.style.display === 'none') ? '' : 'none';
+        }
+      });
+
+      // HUD itself is draggable
+      makeDraggable(hud, hud);
     }
 
     hud.className = brilliantHunter ? 'hud-brilliant' : '';
-
     let statusText = `Depth ${targetDepth}`;
     if (brilliantHunter) statusText += ' | 🔥 Brilliant Hunter';
-
     hud.innerHTML = `<div class="dot"></div><div>iChess: ${statusText}</div>`;
   }
 
@@ -432,9 +487,25 @@
     }
 
     const activeTurn = detectActiveTurn(board);
-    // Use '-' for castling rights — DOM can't track castling state
-    // KQkq causes chess.js to throw when kings have moved from starting squares
-    return `${fenRows.join('/')} ${activeTurn} - - 0 1`;
+
+    // ── Castling Rights: infer from starting-square occupancy ─────────────────
+    // grid[7] = rank 1 (white back rank), grid[0] = rank 8 (black back rank)
+    // col 0=a, 4=e, 7=h
+    // Strategy: if king AND rook are both still on their starting squares,
+    // optimistically assume the castling right is still alive.
+    // chess.js legality check in processMoveSelection is the safety net.
+    let castling = '';
+    if (grid[7][4] === 'K') {                    // white king on e1
+      if (grid[7][7] === 'R') castling += 'K';  // rook on h1 → kingside
+      if (grid[7][0] === 'R') castling += 'Q';  // rook on a1 → queenside
+    }
+    if (grid[0][4] === 'k') {                    // black king on e8
+      if (grid[0][7] === 'r') castling += 'k';  // rook on h8 → kingside
+      if (grid[0][0] === 'r') castling += 'q';  // rook on a8 → queenside
+    }
+    if (!castling) castling = '-';
+
+    return `${fenRows.join('/')} ${activeTurn} ${castling} - 0 1`;
   }
 
   function getSquareCoordinates(board, sq) {
@@ -510,13 +581,177 @@
 
     board.appendChild(container);
     lastDrawnOverlay = { fromSq, toSq, moveType, badgeText };
-    console.log(`[iChess Engine] Overlay drawn: ${fromSq}→${toSq} [${moveType}]`);
+    log(`[iChess Engine] Overlay drawn: ${fromSq}→${toSq} [${moveType}]`);
   }
 
   function clearOverlay() {
     const el = document.getElementById('ichess-overlay-container');
     if (el) el.remove();
     lastDrawnOverlay = null;
+  }
+
+  // ── Draggable Helper ─────────────────────────────────────────────────────
+  // Makes any fixed element draggable. !important CSS is overridden via setProperty.
+  function makeDraggable(el, handle) {
+    let dragged = false;
+
+    handle.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragged = false;
+
+      const rect = el.getBoundingClientRect();
+      // Snap to left/top coords (overrides CSS right/bottom !important)
+      el.style.setProperty('left',   rect.left + 'px', 'important');
+      el.style.setProperty('top',    rect.top  + 'px', 'important');
+      el.style.setProperty('right',  'auto',            'important');
+      el.style.setProperty('bottom', 'auto',            'important');
+
+      const ox = e.clientX - rect.left;
+      const oy = e.clientY - rect.top;
+      handle.style.cursor = 'grabbing';
+
+      function onMove(ev) {
+        dragged = true;
+        const nx = Math.max(0, Math.min(ev.clientX - ox, window.innerWidth  - el.offsetWidth));
+        const ny = Math.max(0, Math.min(ev.clientY - oy, window.innerHeight - el.offsetHeight));
+        el.style.setProperty('left', nx + 'px', 'important');
+        el.style.setProperty('top',  ny + 'px', 'important');
+      }
+
+      function onUp() {
+        handle.style.cursor = 'grab';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+    });
+
+    // Expose dragged flag so click listeners can tell apart click vs drag-release
+    el._ichessDragged = () => dragged;
+  }
+
+  // ── In-Page Settings Panel ────────────────────────────────────────────────
+  function createSettingsPanel() {
+    const existing = document.getElementById('ichess-panel');
+    if (existing) { existing.style.display = ''; return; }
+
+    const DEPTH_OPTS = [
+      [2,'Casual (~800 ELO)'],[4,'Beginner (~1000 ELO)'],[6,'Club Player (~1350 ELO)'],
+      [8,'Advanced Club (~1600 ELO)'],[10,'Expert (~1850 ELO)'],[12,'Candidate Master (~2100 ELO)'],
+      [14,'FIDE Master (~2300 ELO)'],[16,"Int'l Master (~2450 ELO)"],[18,'Grandmaster (~2600 ELO)'],
+      [20,'Super GM (~2800 ELO)'],[22,'Engine Elite (~3000 ELO)'],[24,'Max Depth (~3500 ELO)'],
+    ];
+
+    const panel = document.createElement('div');
+    panel.id = 'ichess-panel';
+    panel.innerHTML = `
+      <div id="ichess-panel-header">
+        <div class="ichess-panel-header-title">
+          <span class="ichess-panel-title">i<span style="color:#00adb5">Chess</span> Control</span>
+          <span class="ichess-panel-badge">ASSIST v5.0</span>
+        </div>
+        <button id="ichess-panel-min" title="Minimize">−</button>
+      </div>
+      <div id="ichess-panel-body">
+        <button id="ichess-btn-rescan" class="ichess-btn-rescan">⚡ Force Rescan</button>
+        <div class="ichess-row">
+          <span class="ichess-row-label">Show Best Move Overlay</span>
+          <label class="ichess-switch">
+            <input type="checkbox" id="ichess-tog-overlay" ${showOverlay ? 'checked' : ''}>
+            <span class="ichess-slider"></span>
+          </label>
+        </div>
+        <div class="ichess-row ichess-brilliant-row">
+          <div>
+            <div style="font-weight:800;color:#ff4b4b;font-size:12px;">🔥 Brilliant Hunter</div>
+            <div style="font-size:10px;color:#94a3b8;">Hunts for piece sacrifices (!!)</div>
+          </div>
+          <label class="ichess-switch">
+            <input type="checkbox" id="ichess-tog-brilliant" ${brilliantHunter ? 'checked' : ''}>
+            <span class="ichess-slider ichess-slider-red"></span>
+          </label>
+        </div>
+        <div class="ichess-depth-section">
+          <div class="ichess-label-title">Calculated Depth (Strength)</div>
+          <select id="ichess-depth-sel">
+            ${DEPTH_OPTS.map(([d, lbl]) =>
+              `<option value="${d}" ${targetDepth === d ? 'selected' : ''}>Depth ${d < 10 ? '0' : ''}${d} — ${lbl}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="ichess-panel-footer">iChess Advanced Engine Assist</div>
+      </div>
+    `;
+
+    document.body.appendChild(panel);
+
+    // Position panel above the HUD pill
+    const hud = document.getElementById('ichess-hud-status');
+    if (hud) {
+      const hr  = hud.getBoundingClientRect();
+      const ph  = 350; // estimated panel height
+      let   top = hr.top - ph - 8;
+      let   left = hr.left;
+      if (top < 8)  top  = hr.bottom + 8;
+      left = Math.max(8, Math.min(left, window.innerWidth - 296));
+      panel.style.setProperty('top',    top  + 'px', 'important');
+      panel.style.setProperty('left',   left + 'px', 'important');
+      panel.style.setProperty('right',  'auto',       'important');
+      panel.style.setProperty('bottom', 'auto',       'important');
+    }
+
+    // Drag via header
+    makeDraggable(panel, document.getElementById('ichess-panel-header'));
+
+    // Minimize — hide panel; click HUD to restore
+    document.getElementById('ichess-panel-min').addEventListener('click', (e) => {
+      e.stopPropagation();
+      panel.style.display = 'none';
+    });
+
+    // Force Rescan (mirrors the logic in the message handler)
+    const btnRescan = document.getElementById('ichess-btn-rescan');
+    btnRescan.addEventListener('click', () => {
+      if (isEvaluating) sendEngineCmd('stop');
+      isEvaluating = false; stopFlushPending = false; pendingEvalFen = null;
+      lastEvaluatedFen = ''; evaluatingFen = ''; pendingFen = '';
+      mpvList = []; forceNextScan = true;
+      clearOverlay();
+      btnRescan.textContent = '✓ Rescanning...';
+      setTimeout(() => { if (btnRescan) btnRescan.textContent = '⚡ Force Rescan'; }, 1500);
+      setTimeout(scanBoard, 100);
+    });
+
+    // Settings change handler — syncs directly into engine vars + chrome.storage
+    function onSettingsChange() {
+      showOverlay     = document.getElementById('ichess-tog-overlay').checked;
+      brilliantHunter = document.getElementById('ichess-tog-brilliant').checked;
+      targetDepth     = parseInt(document.getElementById('ichess-depth-sel').value, 10);
+      if (isEngineReady) sendEngineCmd(`setoption name MultiPV value ${brilliantHunter ? 5 : 2}`);
+      hudNeedsUpdate = true;
+      updateHudStatus();
+      if (!showOverlay) clearOverlay();
+      lastEvaluatedFen = '';
+      scanBoard();
+      if (isContextValid()) chrome.storage.local.set({ showOverlay, brilliantHunter, depth: targetDepth });
+    }
+
+    document.getElementById('ichess-tog-overlay').addEventListener('change',  onSettingsChange);
+    document.getElementById('ichess-tog-brilliant').addEventListener('change', onSettingsChange);
+    document.getElementById('ichess-depth-sel').addEventListener('change',     onSettingsChange);
+  }
+
+  // Reflect engine state into panel UI (called after external settings update)
+  function syncPanelFromState() {
+    const ov = document.getElementById('ichess-tog-overlay');
+    const br = document.getElementById('ichess-tog-brilliant');
+    const dp = document.getElementById('ichess-depth-sel');
+    if (ov) ov.checked  = showOverlay;
+    if (br) br.checked  = brilliantHunter;
+    if (dp) dp.value    = String(targetDepth);
   }
 
   // Move Selection & Overlay Drawing with Strict Legality Validation
@@ -535,12 +770,12 @@
         const promo = defaultBestMove.length > 4 ? defaultBestMove[4] : 'q';
         const legalMove = tempGame.move({ from: fromSq, to: toSq, promotion: promo });
         if (!legalMove) {
-          console.warn(`[iChess Engine] Discarding stale/illegal move ${defaultBestMove} for FEN: ${fen}`);
+          warn(`[iChess Engine] Discarding stale/illegal move ${defaultBestMove} for FEN: ${fen}`);
           clearOverlay();
           return;
         }
       } catch (e) {
-        console.warn(`[iChess Engine] FEN validation exception for ${defaultBestMove} (stale response discarded):`, e.message);
+        warn(`[iChess Engine] FEN validation exception for ${defaultBestMove} (stale response discarded):`, e.message);
         clearOverlay();
         return;
       }
@@ -666,34 +901,43 @@
     const fenRoot = fen.split(' ')[0];
     if (lastGameFenRoot && fenRoot !== lastGameFenRoot && fen.includes('rnbqkbnr/pppppppp')) {
       clearOverlay();
-      console.log('[iChess Engine] New game detected, overlay reset');
+      log('[iChess Engine] New game detected, overlay reset');
     }
     lastGameFenRoot = fenRoot;
 
     // ── Stability check: only evaluate FEN after it's been stable for 2 scans (~600ms) ────
     // Prevents triggering on intermediate DOM states during Chess.com move animations
     if (fen !== lastEvaluatedFen) {
-      if (fen !== pendingFen) {
+      if (!forceNextScan && fen !== pendingFen) {
         // First time seeing this FEN — record it and wait for next scan to confirm
         pendingFen = fen;
         return;
       }
-      // FEN is stable (seen twice) — evaluate it
-      pendingFen = '';
-      console.log('[iChess Engine] Evaluating new FEN position:', fen);
-      lastEvaluatedFen = fen;
-      evaluatingFen = fen;
+      // FEN is stable (seen twice) OR force flag is set — evaluate it
+      pendingFen    = '';
+      forceNextScan = false;
+      log('[iChess Engine] Stable new FEN detected:', fen);
 
       if (isEvaluating) {
+        // ── Stop-flush path: send stop, queue new FEN, wait for Stockfish's
+        //    flush bestmove before starting the real eval ───────────────────
         sendEngineCmd('stop');
+        stopFlushPending = true;
+        isEvaluating    = false;
+        pendingEvalFen  = fen;
+        log('[iChess Engine] ⏸ Stopping current search — flush queued for new FEN');
+        return;
       }
 
-      isEvaluating = true;
-      mpvList = [];
-      clearOverlay();
+      if (stopFlushPending) {
+        // Already waiting for a flush — just update the queued FEN to the latest
+        pendingEvalFen = fen;
+        log('[iChess Engine] Updated pending eval FEN (still awaiting flush)');
+        return;
+      }
 
-      sendEngineCmd(`position fen ${fen}`);
-      sendEngineCmd(`go depth ${targetDepth}`);
+      // Engine idle — start evaluation immediately
+      startEval(fen);
     }
   }
 
